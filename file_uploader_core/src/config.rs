@@ -39,22 +39,24 @@ pub fn init_logging<P: AsRef<std::path::Path>>(log_file_path: P) -> io::Result<(
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let file = std::fs::File::create(log_file_path)?;
+    // let file = std::fs::File::create(log_file_path)?;
 
     let stdout_layer = fmt::layer()
         .with_target(false)
         .event_format(UploaderLoggingFormatter)
         .with_filter(env_filter.clone());
 
+        /*
     let file_layer = fmt::layer()
         .with_target(false)
         .event_format(UploaderLoggingFormatter)
         .with_writer(file)
         .with_filter(env_filter);
+    */
 
     tracing_subscriber::registry()
         .with(stdout_layer)
-        .with(file_layer)
+        // .with(file_layer)
         .init();
 
     Ok(())
