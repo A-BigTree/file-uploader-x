@@ -1,3 +1,4 @@
+mod error;
 mod config;
 
 use config::init_logging;

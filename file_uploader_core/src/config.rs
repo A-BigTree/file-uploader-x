@@ -46,7 +46,7 @@ pub fn init_logging<P: AsRef<std::path::Path>>(log_file_path: P) -> io::Result<(
         .event_format(UploaderLoggingFormatter)
         .with_filter(env_filter.clone());
 
-        /*
+    /*
     let file_layer = fmt::layer()
         .with_target(false)
         .event_format(UploaderLoggingFormatter)
