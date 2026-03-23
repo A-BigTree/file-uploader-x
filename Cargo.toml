@@ -1,0 +1,15 @@
+[workspace]
+members = ["file_uploader_sdk", "file_uploader_core"]
+resolver = "3"
+
+[workspace.package]
+version =   "0.1.0"
+authors = ['abigtree']
+
+[workspace.dependencies]
+file_uploader_sdk = { path = "file_uploader_sdk" }
+file_uploader_core = { path = "file_uploader_core" }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+chrono = "0.4"

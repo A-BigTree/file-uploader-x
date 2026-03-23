@@ -1,5 +1,0 @@
-{
-  "rust-analyzer.linkedProjects": [
-    "file_uploader_core/Cargo.toml"
-  ]
-}

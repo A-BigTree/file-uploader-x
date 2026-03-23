@@ -1,0 +1,9 @@
+[package]
+name = "file_uploader_sdk"
+version.workspace = true
+authors.workspace = true
+edition = "2024"
+
+[dependencies]
+thiserror = {workspace = true}
+tracing = {workspace = true}

@@ -1,10 +1,12 @@
 [package]
 name = "file_uploader_core"
-version = "0.1.0"
+version.workspace = true
+authors.workspace = true
 edition = "2024"
 
 [dependencies]
-thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-chrono = "0.4"
+thiserror = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+chrono = {workspace = true}
+file_uploader_sdk = {workspace = true}
