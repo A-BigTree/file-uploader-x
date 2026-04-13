@@ -6,5 +6,6 @@ pub enum UploadPhase {
     PreUpload,
     Upload,
     PostUpload,
+    Output,
 }
 
