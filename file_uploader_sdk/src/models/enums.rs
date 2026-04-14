@@ -1,36 +1,36 @@
 
 
-// 上传阶段
+// Upload phase
 pub enum UploadPhase {
-    // 输入
+    // Input
     Input,
-    // 准备上传
+    // Preparing to upload
     PreUpload,
-    // 上传中
+    // Uploading
     Upload,
-    // 上传完成
+    // Upload complete
     PostUpload,
-    // 输出
+    // Output
     Output,
 }
 
-// 任务状态
+// Task status
 pub enum UploadTaskStatus {
-    // 初始化
+    // Initialization
     Init,
-    // 执行中
+    // Running
     Running,
-    // 暂停
+    // Paused
     Pause,
-    // 完成
+    // Completed
     Complete,
-    // 失败
+    // Failed
     Failed,
 }
 
-// 流程状态
+// Process status
 pub enum UploadProcessStatus {
-    // 等待
+    // Waiting
     Wait,
     // 初始化
     Init,
