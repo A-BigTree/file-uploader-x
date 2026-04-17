@@ -8,3 +8,4 @@ edition = "2024"
 thiserror = {workspace = true}
 tracing = {workspace = true}
 stabby = {workspace = true}
+chrono = {workspace = true}
