@@ -5,7 +5,7 @@ use std::{
 
 use chrono::Local;
 
-use crate::models::enums::{UploadPhase, UploadProcessStatus, UploadTaskStatus};
+use crate::models::enums::{FileInputDataType, UploadPhase, UploadProcessStatus, UploadTaskStatus};
 
 /**
  * 上传任务的context
@@ -111,13 +111,14 @@ impl UploadProcessCtx {
     }
 }
 
-
 /**
- * 文件定义
+ * 文件数据
  */
-pub struct UploadFileInfo {
-    // 文件原始输入
-    pub origin_input: String,
+pub struct InputFileData {
+    // 数据类型
+    pub data_type: FileInputDataType,
+    // 文件输入
+    pub input_path: String,
     // 文件ID
     pub id: String,
     // 文件名
@@ -125,18 +126,15 @@ pub struct UploadFileInfo {
     // 文件类型
     pub file_type: String,
     // 文件大小
-    pub size: usize
+    pub size: usize,
+    // 二进制数据
+    pub data: Option<Arc<Vec<u8>>>,
 }
 
-/**
- * 文件数据
- */
-pub struct InputFileData {
-    // 数据
-    pub data: Vec<u8>,
-    // 偏移量
-    pub offset: usize,
-    // 大小
-    pub size: usize
+// 输入文件信息
+pub struct UploadFileInfoCtx {
+    // 文件数据
+    pub file_list: Vec<Arc<InputFileData>>,
+    // 关联流程
+    pub related_process_info: Weak<UploadProcessCtx>,
 }
-

@@ -41,3 +41,13 @@ pub enum UploadProcessStatus {
     // 失败
     Failed,
 }
+
+// 文件输入数据类型
+pub enum FileInputDataType {
+    // 二进制数据
+    Binary,
+    // 文件系统路径
+    FilePath,
+    // 网络路径
+    NetworkPath,
+}
