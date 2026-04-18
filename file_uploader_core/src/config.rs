@@ -32,7 +32,7 @@ where
     }
 }
 
-pub fn init_logging<P: AsRef<std::path::Path>>(log_file_path: P) -> io::Result<()> {
+pub fn init_logging() -> io::Result<()> {
     use tracing_subscriber::fmt;
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::EnvFilter;
