@@ -4,12 +4,13 @@ use std::{
 };
 
 use chrono::Local;
-
-use crate::models::enums::{FileInputDataType, UploadPhase, UploadProcessStatus, UploadTaskStatus};
+use serde::{Deserialize, Serialize};
+use crate::models::enums::{FileDataType, OutputResultType, UploadPhase, UploadProcessStatus, UploadTaskStatus};
 
 /**
  * 上传任务的context
  */
+#[derive(Serialize, Deserialize, Debug)]
 pub struct UploadTaskCtx {
     // 任务id
     pub id: String,
@@ -58,6 +59,7 @@ impl UploadTaskCtx {
 /**
  * 上传流程的context
  */
+#[derive(Serialize, Deserialize, Debug)]
 pub struct UploadProcessCtx {
     // 流程ID
     pub id: String,
@@ -74,12 +76,12 @@ pub struct UploadProcessCtx {
     // 扩展信息
     pub extra_info: Option<HashMap<String, String>>,
     // 关联任务
+    #[serde(skip)]
     pub related_task_info: Weak<UploadTaskCtx>,
-    // TODO 流程配置
 }
 
 impl UploadProcessCtx {
-    pub fn new(id: String, related_task: Weak<UploadTaskCtx>) -> Self {
+    pub fn new(id: String, related_task_info: Weak<UploadTaskCtx>) -> Self {
         Self {
             id,
             status: UploadProcessStatus::Init,
@@ -88,7 +90,7 @@ impl UploadProcessCtx {
             end_time: None,
             phase: UploadPhase::Input,
             extra_info: None,
-            related_task_info: related_task,
+            related_task_info,
         }
     }
 
@@ -114,9 +116,10 @@ impl UploadProcessCtx {
 /**
  * 文件数据
  */
-pub struct InputFileData {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UploadFileData {
     // 数据类型
-    pub data_type: FileInputDataType,
+    pub data_type: FileDataType,
     // 文件输入
     pub input_path: String,
     // 文件ID
@@ -128,13 +131,56 @@ pub struct InputFileData {
     // 文件大小
     pub size: usize,
     // 二进制数据
+    #[serde(skip)]
     pub data: Option<Arc<Vec<u8>>>,
 }
 
-// 输入文件信息
-pub struct UploadFileInfoCtx {
+impl UploadFileData {
+    pub fn new(
+        data_type: FileDataType,
+        input_path: String,
+        id: String,
+        name: String,
+        file_type: String,
+        size: usize,
+    ) -> Self {
+        Self {
+            data_type,
+            input_path,
+            id,
+            name,
+            file_type,
+            size,
+            data: None,
+        }
+    }
+}
+
+/**
+ * 输入上下文
+ */
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UploadInputCtx {
     // 文件数据
-    pub file_list: Vec<Arc<InputFileData>>,
+    pub file_list: Vec<Arc<UploadFileData>>,
     // 关联流程
+    #[serde(skip)]
     pub related_process_info: Weak<UploadProcessCtx>,
+    // 扩展信息
+    pub extra_info: Option<HashMap<String, String>>,
+}
+
+/**
+ * 输出结果
+ */
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UploadOutputCtx {
+    // 输出结果
+    pub result: OutputResultType,
+    // 输出信息
+    pub message: String,
+    // 文件数据
+    pub file_list: Option<Vec<Arc<UploadFileData>>>,
+    // 扩展信息
+    pub extra_info: Option<HashMap<String, String>>,
 }

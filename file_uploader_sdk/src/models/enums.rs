@@ -1,6 +1,7 @@
-
+use serde::{Deserialize, Serialize};
 
 // Upload phase
+#[derive(Serialize, Deserialize, Debug)]
 pub enum UploadPhase {
     // Input
     Input,
@@ -15,6 +16,7 @@ pub enum UploadPhase {
 }
 
 // Task status
+#[derive(Serialize, Deserialize, Debug)]
 pub enum UploadTaskStatus {
     // Initialization
     Init,
@@ -29,6 +31,7 @@ pub enum UploadTaskStatus {
 }
 
 // Process status
+#[derive(Serialize, Deserialize, Debug)]
 pub enum UploadProcessStatus {
     // Waiting
     Wait,
@@ -43,11 +46,23 @@ pub enum UploadProcessStatus {
 }
 
 // 文件输入数据类型
-pub enum FileInputDataType {
+#[derive(Serialize, Deserialize, Debug)]
+pub enum FileDataType {
     // 二进制数据
     Binary,
     // 文件系统路径
     FilePath,
     // 网络路径
     NetworkPath,
+}
+
+// 输出结果类型
+#[derive(Serialize, Deserialize, Debug)]
+pub enum OutputResultType {
+    // 成功
+    Success,
+    // 失败
+    Failed,
+    // 中断
+    Interrupt,
 }
