@@ -1,7 +1,7 @@
-use stabby::option::Option;
-use stabby::string::String;
-use stabby::sync::Arc;
-use stabby::vec::Vec;
+use stabby::option::Option as SOption;
+use stabby::string::String as SString;
+use stabby::sync::Arc as SArc;
+use stabby::vec::Vec as SVec;
 
 #[stabby::stabby]
 #[repr(u8)]
@@ -34,17 +34,17 @@ pub struct UploadFileDataS {
     // 数据类型
     pub data_type: FileDataTypeS,
     // 文件输入
-    pub input_path: String,
+    pub input_path: SString,
     // 文件ID
-    pub id: String,
+    pub id: SString,
     // 文件名
-    pub name: String,
+    pub name: SString,
     // 文件类型
-    pub file_type: String,
+    pub file_type: SString,
     // 文件大小
     pub size: usize,
     // 二进制数据
-    pub data: Option<Arc<Vec<u8>>>,
+    pub data: SOption<SArc<SVec<u8>>>,
 }
 
 /**
@@ -53,9 +53,9 @@ pub struct UploadFileDataS {
 #[stabby::stabby]
 pub struct UploadInputCtxS {
     // 文件数据
-    pub file_list: Vec<Arc<UploadFileDataS>>,
+    pub file_list: SVec<SArc<UploadFileDataS>>,
     // 扩展信息
-    pub extra_info: Option<String>,
+    pub extra_info: SOption<SString>,
 }
 
 /**
@@ -66,9 +66,9 @@ pub struct UploadOutputCtxS {
     // 输出结果
     pub result: OutputResultTypeS,
     // 输出信息
-    pub message: String,
+    pub message: SString,
     // 文件数据
-    pub file_list: Option<Vec<Arc<UploadFileDataS>>>,
+    pub file_list: SOption<SVec<SArc<UploadFileDataS>>>,
     // 扩展信息
-    pub extra_info: Option<String>,
+    pub extra_info: SOption<SString>,
 }

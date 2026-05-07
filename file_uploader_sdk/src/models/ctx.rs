@@ -3,9 +3,14 @@ use std::{
     sync::{Arc, Weak},
 };
 
+use crate::models::enums::{
+    FileDataType, OutputResultType, UploadPhase, UploadProcessStatus, UploadTaskStatus,
+};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use crate::models::enums::{FileDataType, OutputResultType, UploadPhase, UploadProcessStatus, UploadTaskStatus};
+
+use stabby::sync::Arc as SArc;
+use stabby::vec::Vec as SVec;
 
 /**
  * 上传任务的context
@@ -116,7 +121,7 @@ impl UploadProcessCtx {
 /**
  * 文件数据
  */
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 pub struct UploadFileData {
     // 数据类型
     pub data_type: FileDataType,
@@ -132,7 +137,7 @@ pub struct UploadFileData {
     pub size: usize,
     // 二进制数据
     #[serde(skip)]
-    pub data: Option<Arc<Vec<u8>>>,
+    pub data: Option<SArc<SVec<u8>>>,
 }
 
 impl UploadFileData {
@@ -159,7 +164,7 @@ impl UploadFileData {
 /**
  * 输入上下文
  */
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 pub struct UploadInputCtx {
     // 文件数据
     pub file_list: Vec<Arc<UploadFileData>>,
@@ -173,7 +178,7 @@ pub struct UploadInputCtx {
 /**
  * 输出结果
  */
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 pub struct UploadOutputCtx {
     // 输出结果
     pub result: OutputResultType,
