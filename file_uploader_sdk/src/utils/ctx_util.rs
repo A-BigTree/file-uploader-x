@@ -1,26 +1,17 @@
+use crate::models::ctx::{UploadFileData, UploadInputCtx, UploadOutputCtx};
+use crate::models::ctx_stabby::{UploadFileDataS, UploadInputCtxS, UploadOutputCtxS};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::models::ctx::{UploadFileData, UploadInputCtx, UploadOutputCtx};
-use crate::models::ctx_stabby::{FileDataTypeS, OutputResultTypeS, UploadFileDataS, UploadInputCtxS, UploadOutputCtxS};
-use crate::models::enums::{FileDataType, OutputResultType};
-
+use serde_json::Value;
 use stabby::option::Option as SOption;
 use stabby::string::String as SString;
 use stabby::sync::Arc as SArc;
 use stabby::vec::Vec as SVec;
 use tracing::error;
 
-pub fn convert_file_data_type_s(data: &FileDataType) -> FileDataTypeS {
-    match data {
-        FileDataType::Binary => FileDataTypeS::Binary,
-        FileDataType::FilePath => FileDataTypeS::FilePath,
-        FileDataType::NetworkPath => FileDataTypeS::NetworkPath,
-    }
-}
-
 pub fn convert_file_data_s(input: &UploadFileData) -> UploadFileDataS {
     UploadFileDataS {
-        data_type: convert_file_data_type_s(&input.data_type),
+        data_type: input.data_type.clone(),
         input_path: input.input_path.clone().into(),
         id: input.id.clone().into(),
         name: input.name.clone().into(),
@@ -49,37 +40,34 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
         }
     };
 
+    let config_info: SOption<SString> = match &input.config_info {
+        None => None.into(),
+        Some(config) => {
+            if let Ok(json) = serde_json::to_string(config) {
+                SOption::Some(json.into())
+            } else {
+                error!("Failed to serialize config info");
+                None.into()
+            }
+        },
+    };
+
     UploadInputCtxS {
         file_list,
+        config_info,
         extra_info,
-    }
-}
-
-pub fn convert_file_data_type(data: &FileDataTypeS) -> FileDataType {
-    match data {
-        FileDataTypeS::Binary => FileDataType::Binary,
-        FileDataTypeS::FilePath => FileDataType::FilePath,
-        FileDataTypeS::NetworkPath => FileDataType::NetworkPath,
     }
 }
 
 pub fn convert_file_data(input: &UploadFileDataS) -> UploadFileData {
     UploadFileData {
-        data_type: convert_file_data_type(&input.data_type),
+        data_type: input.data_type.clone(),
         input_path: input.input_path.clone().into(),
         id: input.id.clone().into(),
         name: input.name.clone().into(),
         file_type: input.file_type.clone().into(),
         size: input.size,
         data: input.data.clone().into(),
-    }
-}
-
-pub fn convert_output_result_type(data: &OutputResultTypeS) -> OutputResultType {
-    match data {
-        OutputResultTypeS::Success => OutputResultType::Success,
-        OutputResultTypeS::Failed => OutputResultType::Failed,
-        OutputResultTypeS::Interrupt => OutputResultType::Interrupt,
     }
 }
 
@@ -102,15 +90,25 @@ pub fn convert_output_ctx(input: &UploadOutputCtxS) -> UploadOutputCtx {
             } else {
                 error!("Failed to deserialize extra info");
                 None
-            }
+            };
         },
         || None,
     );
 
     UploadOutputCtx {
-        result: convert_output_result_type(&input.result),
+        result: input.result.clone(),
         message: input.message.clone().into(),
         file_list,
         extra_info,
+    }
+}
+
+/// 获取配置Value
+pub fn get_config(config: &str) -> Option<Value> {
+    if let Ok(value) = serde_json::from_str(config) {
+        Some(value)
+    } else {
+        error!("Failed to deserialize config");
+        None
     }
 }

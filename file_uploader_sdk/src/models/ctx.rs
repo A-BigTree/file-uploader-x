@@ -4,11 +4,12 @@ use std::{
 };
 
 use crate::models::enums::{
-    FileDataType, OutputResultType, UploadPhase, UploadProcessStatus, UploadTaskStatus,
+    FileDataType, OutputResultType, UploadPhase, UploadProcessStatus,
+    UploadTaskStatus,
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-
+use serde_json::Value;
 use stabby::sync::Arc as SArc;
 use stabby::vec::Vec as SVec;
 
@@ -168,11 +169,13 @@ impl UploadFileData {
 pub struct UploadInputCtx {
     // 文件数据
     pub file_list: Vec<Arc<UploadFileData>>,
+    // 配置信息
+    pub config_info: Option<Value>,
+    // 扩展信息
+    pub extra_info: Option<HashMap<String, String>>,
     // 关联流程
     #[serde(skip)]
     pub related_process_info: Weak<UploadProcessCtx>,
-    // 扩展信息
-    pub extra_info: Option<HashMap<String, String>>,
 }
 
 /**

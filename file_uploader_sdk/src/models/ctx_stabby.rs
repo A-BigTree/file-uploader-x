@@ -1,30 +1,9 @@
+use crate::models::enums::{FileDataType, OutputResultType};
+use serde::{Deserialize, Serialize};
 use stabby::option::Option as SOption;
 use stabby::string::String as SString;
 use stabby::sync::Arc as SArc;
 use stabby::vec::Vec as SVec;
-
-#[stabby::stabby]
-#[repr(u8)]
-pub enum FileDataTypeS {
-    // 二进制数据
-    Binary,
-    // 文件系统路径
-    FilePath,
-    // 网络路径
-    NetworkPath,
-}
-
-// 输出结果类型
-#[stabby::stabby]
-#[repr(u8)]
-pub enum OutputResultTypeS {
-    // 成功
-    Success,
-    // 失败
-    Failed,
-    // 中断
-    Interrupt,
-}
 
 /**
  * 文件数据
@@ -32,7 +11,7 @@ pub enum OutputResultTypeS {
 #[stabby::stabby]
 pub struct UploadFileDataS {
     // 数据类型
-    pub data_type: FileDataTypeS,
+    pub data_type: FileDataType,
     // 文件输入
     pub input_path: SString,
     // 文件ID
@@ -54,6 +33,8 @@ pub struct UploadFileDataS {
 pub struct UploadInputCtxS {
     // 文件数据
     pub file_list: SVec<SArc<UploadFileDataS>>,
+    // 配置信息
+    pub config_info: SOption<SString>,
     // 扩展信息
     pub extra_info: SOption<SString>,
 }
@@ -64,7 +45,7 @@ pub struct UploadInputCtxS {
 #[stabby::stabby]
 pub struct UploadOutputCtxS {
     // 输出结果
-    pub result: OutputResultTypeS,
+    pub result: OutputResultType,
     // 输出信息
     pub message: SString,
     // 文件数据
