@@ -5,8 +5,11 @@ authors.workspace = true
 edition = "2024"
 
 [dependencies]
-thiserror = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 chrono = {workspace = true}
 file_uploader_sdk = {workspace = true}
+stabby = {workspace = true}
+libloading = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}

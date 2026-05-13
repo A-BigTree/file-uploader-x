@@ -4,14 +4,14 @@ use std::{
 };
 
 use crate::models::enums::{
-    FileDataType, OutputResultType, UploadPhase, UploadProcessStatus,
-    UploadTaskStatus,
+    FileDataType, OutputResultType, UploadPhase, UploadProcessStatus, UploadTaskStatus,
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stabby::sync::Arc as SArc;
 use stabby::vec::Vec as SVec;
+use tracing::error;
 
 /**
  * 上传任务的context
@@ -51,7 +51,11 @@ impl UploadTaskCtx {
         if self.extra_info.is_none() {
             self.extra_info = Some(HashMap::new());
         }
-        self.extra_info.as_mut().unwrap().insert(key, value);
+        if let Some(map) = self.extra_info.as_mut() {
+            map.insert(key, value);
+        } else {
+            error!("extra info is none");
+        }
     }
 
     pub fn get_extra(&self, key: &str) -> Option<&String> {
@@ -104,7 +108,9 @@ impl UploadProcessCtx {
         if self.extra_info.is_none() {
             self.extra_info = Some(HashMap::new());
         }
-        self.extra_info.as_mut().unwrap().insert(key, value);
+        if let Some(map) = self.extra_info.as_mut() {
+            map.insert(key, value);
+        }
     }
 
     pub fn get_extra(&self, key: &str) -> Option<&String> {

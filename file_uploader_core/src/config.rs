@@ -37,7 +37,7 @@ pub fn init_logging() -> io::Result<()> {
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::EnvFilter;
 
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
 
     // let file = std::fs::File::create(log_file_path)?;
 

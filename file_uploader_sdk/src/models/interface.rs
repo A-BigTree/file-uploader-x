@@ -27,4 +27,4 @@ pub trait UploadDylibPlugin: Send + Sync {
 }
 
 /// **Export dylib plugin**
-pub type FnGetDylibPlugin = extern "C" fn() -> stabby::dynptr!(Box<dyn UploadDylibPlugin + Send + Sync>);
+pub type FnGetDylibPlugin = extern "C" fn() -> stabby::dynptr!(stabby::boxed::Box<dyn UploadDylibPlugin + Send + Sync>);
