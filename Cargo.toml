@@ -1,5 +1,5 @@
 [workspace]
-members = ["file_uploader_sdk", "file_uploader_core"]
+members = ["file_uploader_sdk", "file_uploader_core", "uploader_example_plugin"]
 resolver = "3"
 
 [workspace.package]

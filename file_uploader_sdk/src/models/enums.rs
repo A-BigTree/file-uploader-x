@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Upload phase
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[stabby::stabby]
 #[repr(u8)]
 pub enum UploadPhase {

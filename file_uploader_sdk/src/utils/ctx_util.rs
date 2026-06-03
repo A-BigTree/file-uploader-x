@@ -59,6 +59,37 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
     }
 }
 
+pub fn convert_input_ctx(input: &UploadInputCtxS) -> UploadInputCtx {
+    let file_list: Vec<Arc<UploadFileData>> = input
+        .file_list
+        .iter()
+        .map(|file| Arc::new(convert_file_data(file)))
+        .collect();
+
+    let extra_info: Option<HashMap<String, String>> = input.extra_info.match_ref(
+        |extra_info_s| {
+            return if let Ok(map) = serde_json::from_str(extra_info_s) {
+                Some(map)
+            } else {
+                error!("Failed to deserialize extra info");
+                None
+            };
+        },
+        || None,
+    );
+    UploadInputCtx {
+        file_list,
+        config_info: input.config_info.match_ref(
+            |config_info_s| {
+                get_config(config_info_s)
+            },
+            || None,
+        ),
+        extra_info,
+        related_process_info: None,
+    }
+}
+
 pub fn convert_file_data(input: &UploadFileDataS) -> UploadFileData {
     UploadFileData {
         data_type: input.data_type.clone(),

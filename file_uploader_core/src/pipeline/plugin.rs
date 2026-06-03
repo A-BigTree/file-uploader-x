@@ -1,3 +1,4 @@
+use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::{UploadConfigType, UploadPhase};
 use file_uploader_sdk::models::interface::{UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
@@ -7,13 +8,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stabby::boxed::Box as SBox;
 use std::collections::HashMap;
+use std::fs::File;
 use std::sync::Arc;
+use tracing::error;
 
 /// **插件统一插槽**
 /// - 不同来源插件统一封装相同的行为
 pub enum PluginSlot {
     // In process
-    InProcess(Box<dyn UploadPlugin>),
+    InProcess(Arc<dyn UploadPlugin>),
     // Dylib
     Dylib {
         plugin: stabby::dynptr!(SBox<dyn UploadDylibPlugin + Send + Sync>),
@@ -52,7 +55,7 @@ impl PluginSlot {
 }
 
 /// **插件元数据**
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginMeta {
     // 插件名称
     pub name: String,
@@ -93,4 +96,45 @@ pub struct UploadPluginInfo {
     // 插件插槽
     #[serde(skip)]
     pub slot: Arc<PluginSlot>,
+}
+
+impl UploadPluginInfo {
+    pub fn new_in_process(
+        config_path: &str,
+        plugin: Box<dyn UploadPlugin>,
+    ) -> Result<UploadPluginInfo, UploadError> {
+        let json_file = File::open(config_path)?;
+        let config_value: Value = serde_json::from_reader(json_file)?;
+        let meta_value = config_value
+            .get(plugin.name())
+            .ok_or_else(|| UploadError::PluginLoadError("Plugin config not found".to_string()))?;
+        let meta: Arc<PluginMeta> = serde_json::from_value(meta_value.clone())?;
+        let default_config_value: Option<&Value> = meta_value.get("config");
+        let default_config: Option<Arc<HashMap<String, PluginConfig>>> = match default_config_value
+        {
+            None => None,
+            Some(config) => {
+                if let Ok(map) = serde_json::from_value(config.clone()) {
+                    Some(Arc::new(map))
+                } else {
+                    error!("Plugin config error");
+                    None
+                }
+            }
+        };
+        let slot = Arc::new(PluginSlot::InProcess(Arc::from(plugin)));
+        let plugin_id = format!(
+            "{}_{}_{}",
+            "in_process",
+            meta.name.clone(),
+            meta.author.clone().unwrap_or("unknow".to_string())
+        );
+        Ok(UploadPluginInfo {
+            id: plugin_id,
+            meta,
+            default_config,
+            path: config_path.to_string(),
+            slot,
+        })
+    }
 }

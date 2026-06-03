@@ -181,7 +181,7 @@ pub struct UploadInputCtx {
     pub extra_info: Option<HashMap<String, String>>,
     // 关联流程
     #[serde(skip)]
-    pub related_process_info: Weak<UploadProcessCtx>,
+    pub related_process_info: Option<Weak<UploadProcessCtx>>,
 }
 
 /**
