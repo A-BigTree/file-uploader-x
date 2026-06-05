@@ -39,7 +39,7 @@ fn validate_file(file: &FileInfo) -> Result<(), UploadError> {
 
 fn main() {
     // init_logging;
-    if let Err(e) = init_logging("") {
+    if let Err(e) = init_logging() {
         eprintln!("Failed to initialize logging: {}", e);
         return;
     } else {

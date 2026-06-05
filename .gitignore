@@ -18,3 +18,5 @@ target/
 
 **/Cargo.lock
 **/temp_uploader.log
+
+**/target/
