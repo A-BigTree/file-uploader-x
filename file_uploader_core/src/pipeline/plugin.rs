@@ -138,3 +138,17 @@ impl UploadPluginInfo {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use file_uploader_sdk::models::ctx::UploadInputCtx;
+    use file_uploader_sdk::models::interface::UploadPlugin;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_plugin_slot_execute_in_process() {
+        todo!("测试 InProcess 插件的 execute 方法")
+    }
+}
