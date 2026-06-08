@@ -26,7 +26,7 @@ pub enum PluginSlot {
 
 impl PluginSlot {
     /// 执行插件
-    fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
+    pub fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
         match self {
             PluginSlot::InProcess(plugin) => plugin.execute(ctx),
             PluginSlot::Dylib { plugin, .. } => {
@@ -38,7 +38,7 @@ impl PluginSlot {
     }
 
     /// 加载插件钩子
-    fn on_load(&self) {
+    pub fn on_load(&self) {
         match self {
             PluginSlot::InProcess(plugin) => plugin.on_load(),
             PluginSlot::Dylib { plugin, .. } => plugin.on_load(),
@@ -46,7 +46,7 @@ impl PluginSlot {
     }
 
     /// 卸载插件钩子
-    fn on_unload(&self) {
+    pub fn on_unload(&self) {
         match self {
             PluginSlot::InProcess(plugin) => plugin.on_unload(),
             PluginSlot::Dylib { plugin, .. } => plugin.on_unload(),

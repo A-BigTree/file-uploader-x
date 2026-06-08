@@ -3,7 +3,7 @@ use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::OutputResultType;
 use file_uploader_sdk::models::interface::UploadPlugin;
 
-struct FileTypeFilter;
+pub struct FileTypeFilter;
 
 impl UploadPlugin for FileTypeFilter {
     fn name(&self) -> &'static str {

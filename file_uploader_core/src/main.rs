@@ -1,41 +1,13 @@
 mod config;
+mod plugins;
+mod pipeline;
 
 use config::init_logging;
 use file_uploader_sdk::error::UploadError;
-use tracing::{info, warn};
-
-struct FileInfo {
-    size: u64,
-    file_type: String,
-    content: Vec<u8>,
-}
-
-fn validate_file(file: &FileInfo) -> Result<(), UploadError> {
-    const MAX_SIZE: u64 = 1024 * 1024 * 10;
-    const ALLOWED_TYPES: &[&str] = &["jpg", "png", "pdf"];
-
-    if file.size > MAX_SIZE {
-        return Err(UploadError::FileTooLarge {
-            size: file.size,
-            max: MAX_SIZE,
-        });
-    }
-
-    if !ALLOWED_TYPES.contains(&file.file_type.as_str()) {
-        return Err(UploadError::UnsupportedFileType {
-            found: file.file_type.clone(),
-            allowed: ALLOWED_TYPES.iter().map(|s| s.to_string()).collect(),
-        });
-    }
-
-    if file.content.is_empty() {
-        return Err(UploadError::InvalidFormat(
-            "File content is empty".to_string(),
-        ));
-    }
-
-    Ok(())
-}
+use tracing::{error, info, warn};
+use file_uploader_core::pipeline::plugin::UploadPluginInfo;
+use file_uploader_sdk::models::ctx::UploadInputCtx;
+use crate::plugins::file_type_filter::FileTypeFilter;
 
 fn main() {
     // init_logging;
@@ -45,31 +17,25 @@ fn main() {
     } else {
         info!("Logging initialized");
     }
-
-    let test_files = vec![
-        FileInfo {
-            size: 1024 * 1024 * 20,
-            file_type: "jpg".to_string(),
-            content: vec![1, 2, 3],
-        },
-        FileInfo {
-            size: 1024,
-            file_type: "exe".to_string(),
-            content: vec![1, 2, 3],
-        },
-        FileInfo {
-            size: 1024,
-            file_type: "pdf".to_string(),
-            content: vec![],
-        },
-    ];
-
-    for file in test_files {
-        match validate_file(&file) {
-            Ok(_) => info!("File {:?} is valid", file.file_type),
-            Err(e) => warn!("Validation failed for {:?}: {}", file.file_type, e),
-        }
-    }
-
-    info!("Hello, world!")
+    let Ok(plugin) = UploadPluginInfo::new_in_process(
+        "plugin.json",
+        Box::new(FileTypeFilter),
+    ) else {
+        error!("Plugin load error");
+        return;
+    };
+    info!("Plugin loaded: {}", serde_json::to_string(&plugin).unwrap_or("plugin error".to_string()));
+    // 测试插件加载
+    plugin.slot.on_load();
+    // 测试插件执行
+    let ctx = UploadInputCtx {
+        file_list: vec![],
+        config_info: None,
+        extra_info: None,
+        related_process_info: None
+    };
+    let output = plugin.slot.execute(&ctx);
+    info!("Plugin execute result: {}", serde_json::to_string(&output).unwrap_or("plugin error".to_string()));
+    // 测试插件卸载
+    plugin.slot.on_unload();
 }
