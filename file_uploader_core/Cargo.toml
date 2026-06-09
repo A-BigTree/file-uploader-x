@@ -13,3 +13,4 @@ stabby = {workspace = true}
 libloading = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
+file_uploader_plugins = {workspace = true}

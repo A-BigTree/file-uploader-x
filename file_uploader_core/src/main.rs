@@ -1,13 +1,11 @@
 mod config;
-mod plugins;
 mod pipeline;
 
 use config::init_logging;
-use file_uploader_sdk::error::UploadError;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use file_uploader_core::pipeline::plugin::UploadPluginInfo;
 use file_uploader_sdk::models::ctx::UploadInputCtx;
-use crate::plugins::file_type_filter::FileTypeFilter;
+use file_uploader_plugins::pre_upload::file_type_filter::FileTypeFilter;
 
 fn main() {
     // init_logging;
@@ -18,7 +16,7 @@ fn main() {
         info!("Logging initialized");
     }
     let Ok(plugin) = UploadPluginInfo::new_in_process(
-        "plugin.json",
+        "./pre_uploader_plugins.json",
         Box::new(FileTypeFilter),
     ) else {
         error!("Plugin load error");
