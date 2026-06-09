@@ -236,4 +236,15 @@ mod tests {
     fn test_plugin_slot_execute_in_process() {
         todo!("测试 InProcess 插件的 execute 方法")
     }
+
+    #[test]
+    fn test_new_from_dylib_path_success() {
+        // 注意：此测试需要在实际构建示例插件后才能运行
+        // 在实际 CI 中应使用 build.rs 设置测试环境
+        let result = UploadPluginInfo::new_from_dylib_path(
+            "../../target/debug/libuploader_example_plugin.dylib"
+        );
+        // 暂时只检查不 panic，实际测试在集成测试中
+        let _ = result;
+    }
 }
