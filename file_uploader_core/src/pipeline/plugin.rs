@@ -1,7 +1,7 @@
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::{UploadConfigType, UploadPhase};
-use file_uploader_sdk::models::interface::{UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
+use file_uploader_sdk::models::interface::{FnGetDylibPlugin, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
 use file_uploader_sdk::utils::ctx_util::{convert_input_ctx_s, convert_output_ctx};
 use libloading::Library;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,7 @@ use serde_json::Value;
 use stabby::boxed::Box as SBox;
 use std::collections::HashMap;
 use std::fs::File;
+use std::path::Path;
 use std::sync::Arc;
 use tracing::error;
 
