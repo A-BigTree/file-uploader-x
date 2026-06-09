@@ -138,6 +138,90 @@ impl UploadPluginInfo {
             slot,
         })
     }
+
+    /// 从动态库文件路径加载插件
+    ///
+    /// # 参数
+    /// * `dylib_path` - 动态库文件路径（.dylib/.so/.dll）
+    ///
+    /// # 返回
+    /// * `Ok(UploadPluginInfo)` - 成功加载的插件信息
+    /// * `Err(UploadError)` - 加载失败
+    pub fn new_from_dylib_path(
+        dylib_path: &str,
+    ) -> Result<UploadPluginInfo, UploadError> {
+        // 1. 解析路径获取父目录
+        let dylib_path_obj = Path::new(dylib_path);
+        let parent_dir = dylib_path_obj
+            .parent()
+            .ok_or_else(|| UploadError::PluginLoadError("Invalid dylib path: no parent directory".to_string()))?;
+
+        // 2. 构建配置文件路径
+        let config_path = parent_dir.join("config.json");
+
+        // 3. 加载配置文件
+        let json_file = File::open(&config_path).map_err(|e| {
+            UploadError::PluginLoadError(format!(
+                "Failed to open config file {}: {}",
+                config_path.display(),
+                e
+            ))
+        })?;
+        let config_value: Value = serde_json::from_reader(json_file)?;
+        let meta: Arc<PluginMeta> = serde_json::from_value(config_value.clone())?;
+        let default_config_value: Option<&Value> = config_value.get("config");
+        let default_config: Option<Arc<HashMap<String, PluginConfig>>> = match default_config_value {
+            None => None,
+            Some(config) => {
+                if let Ok(map) = serde_json::from_value(config.clone()) {
+                    Some(Arc::new(map))
+                } else {
+                    error!("Plugin config error");
+                    None
+                }
+            }
+        };
+
+        // 4. 加载动态库
+        let lib = Arc::new(unsafe {
+            Library::new(dylib_path).map_err(|e| {
+                UploadError::PluginLoadError(format!("Load dylib failed: {}", e))
+            })?
+        });
+
+        // 5. 获取符号
+        let get_plugin: libloading::Symbol<FnGetDylibPlugin> = unsafe {
+            lib.get(b"get_dylib_plugin").map_err(|e| {
+                UploadError::PluginLoadError(format!("Get symbol failed: {}", e))
+            })?
+        };
+
+        // 6. 调用函数获取插件实例
+        let plugin_box = get_plugin();
+
+        // 7. 构建 PluginSlot
+        let slot = Arc::new(PluginSlot::Dylib {
+            plugin: plugin_box,
+            _lib: lib,
+        });
+
+        // 8. 生成插件 ID
+        let plugin_id = format!(
+            "{}_{}_{}",
+            "dylib",
+            meta.name.clone(),
+            meta.author.clone().unwrap_or("unknown".to_string())
+        );
+
+        // 9. 返回 UploadPluginInfo
+        Ok(UploadPluginInfo {
+            id: plugin_id,
+            meta,
+            default_config,
+            path: dylib_path.to_string(),
+            slot,
+        })
+    }
 }
 
 #[cfg(test)]
