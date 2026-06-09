@@ -16,7 +16,7 @@ fn main() {
         info!("Logging initialized");
     }
     let Ok(plugin) = UploadPluginInfo::new_in_process(
-        "./pre_uploader_plugins.json",
+        "./pre_upload_plugins.json",
         Box::new(FileTypeFilter),
     ) else {
         error!("Plugin load error");

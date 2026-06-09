@@ -20,13 +20,27 @@ fn main() {
     // 验证路径
     eprintln!("target_dir = {}", target_dir.display());
 
-    let src = PathBuf::from(&manifest_dir).join("pre_uploader_plugins.json");
-    let dst = target_dir.join("pre_uploader_plugins.json");
+    let src = PathBuf::from(&manifest_dir).join("pre_upload_plugins.json");
+    let dst = target_dir.join("pre_upload_plugins.json");
 
     fs::copy(&src, &dst).unwrap_or_else(|e| {
         panic!("复制失败 {:?} → {:?}: {}", src, dst, e)
     });
 
-    println!("cargo:rerun-if-changed=pre_uploader_plugins.json");
+    let src = PathBuf::from(&manifest_dir).join("post_upload_plugins.json");
+    let dst = target_dir.join("post_upload_plugins.json");
+
+    fs::copy(&src, &dst).unwrap_or_else(|e| {
+        panic!("复制失败 {:?} → {:?}: {}", src, dst, e)
+    });
+
+    let src = PathBuf::from(&manifest_dir).join("upload_plugins.json");
+    let dst = target_dir.join("upload_plugins.json");
+
+    fs::copy(&src, &dst).unwrap_or_else(|e| {
+        panic!("复制失败 {:?} → {:?}: {}", src, dst, e)
+    });
+
+    println!("cargo:rerun-if-changed=pre_upload_plugins.json");
     println!("cargo:rerun-if-changed=build.rs");
 }
