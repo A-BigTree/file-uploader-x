@@ -1,44 +1,13 @@
 mod config;
+mod pipeline;
 
 use config::init_logging;
-use file_uploader_sdk::error::UploadError;
-use tracing::{info, warn};
-
-struct FileInfo {
-    size: u64,
-    file_type: String,
-    content: Vec<u8>,
-}
-
-fn validate_file(file: &FileInfo) -> Result<(), UploadError> {
-    const MAX_SIZE: u64 = 1024 * 1024 * 10;
-    const ALLOWED_TYPES: &[&str] = &["jpg", "png", "pdf"];
-
-    if file.size > MAX_SIZE {
-        return Err(UploadError::FileTooLarge {
-            size: file.size,
-            max: MAX_SIZE,
-        });
-    }
-
-    if !ALLOWED_TYPES.contains(&file.file_type.as_str()) {
-        return Err(UploadError::UnsupportedFileType {
-            found: file.file_type.clone(),
-            allowed: ALLOWED_TYPES.iter().map(|s| s.to_string()).collect(),
-        });
-    }
-
-    if file.content.is_empty() {
-        return Err(UploadError::InvalidFormat(
-            "File content is empty".to_string(),
-        ));
-    }
-
-    Ok(())
-}
+use tracing::{error, info};
+use file_uploader_core::pipeline::plugin::UploadPluginInfo;
+use file_uploader_plugins::pre_upload::file_type_filter::FileTypeFilter;
+use file_uploader_sdk::models::ctx::UploadInputCtx;
 
 fn main() {
-    // init_logging;
     if let Err(e) = init_logging() {
         eprintln!("Failed to initialize logging: {}", e);
         return;
@@ -46,30 +15,33 @@ fn main() {
         info!("Logging initialized");
     }
 
-    let test_files = vec![
-        FileInfo {
-            size: 1024 * 1024 * 20,
-            file_type: "jpg".to_string(),
-            content: vec![1, 2, 3],
-        },
-        FileInfo {
-            size: 1024,
-            file_type: "exe".to_string(),
-            content: vec![1, 2, 3],
-        },
-        FileInfo {
-            size: 1024,
-            file_type: "pdf".to_string(),
-            content: vec![],
-        },
-    ];
+    let ctx = UploadInputCtx {
+        file_list: vec![],
+        config_info: None,
+        extra_info: None,
+        related_process_info: None
+    };
 
-    for file in test_files {
-        match validate_file(&file) {
-            Ok(_) => info!("File {:?} is valid", file.file_type),
-            Err(e) => warn!("Validation failed for {:?}: {}", file.file_type, e),
-        }
-    }
+    info!("=== Testing IN-PROCESS plugin ===");
+    let Ok(plugin) = UploadPluginInfo::new_in_process(
+        "./pre_upload_plugins.json",
+        Box::new(FileTypeFilter),
+    ) else {
+        error!("Plugin load error");
+        return;
+    };
+    info!("Plugin loaded: {}", plugin.id);
+    let result = plugin.slot.execute(&ctx);
+    info!("Plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
 
-    info!("Hello, world!")
+    info!("=== Testing DYLIB plugin WITH logger ===");
+    let Ok(dylib_plugin) = UploadPluginInfo::new_from_dylib_path(
+        "./libuploader_example_plugin.dylib"
+    ) else {
+        error!("Dylib plugin load error");
+        return;
+    };
+    info!("Dylib plugin loaded: {}", dylib_plugin.id);
+    let result = dylib_plugin.slot.execute(&ctx);
+    info!("Dylib plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
 }

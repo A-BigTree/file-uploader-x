@@ -10,5 +10,4 @@ crate-type = ["cdylib"]
 [dependencies]
 file_uploader_sdk = {path = "../file_uploader_sdk"}
 stabby = { version = "72.1.2-rc1", features = ["serde"] }
-tracing = "0.1.44"
 serde_json = "1.0.149"

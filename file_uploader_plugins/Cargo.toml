@@ -1,0 +1,11 @@
+[package]
+name = "file_uploader_plugins"
+edition = "2024"
+version.workspace = true
+authors.workspace = true
+
+[dependencies]
+tracing = {workspace = true}
+file_uploader_sdk = {workspace = true}
+serde_json = {workspace = true}
+
