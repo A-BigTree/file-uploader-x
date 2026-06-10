@@ -247,4 +247,16 @@ mod tests {
         // 暂时只检查不 panic，实际测试在集成测试中
         let _ = result;
     }
+
+    #[test]
+    fn test_new_from_dylib_path_invalid_path() {
+        let result = UploadPluginInfo::new_from_dylib_path("/");
+        assert!(result.is_err());
+        match result {
+            Err(UploadError::PluginLoadError(msg)) => {
+                assert!(msg.contains("no parent directory"));
+            }
+            _ => panic!("Expected PluginLoadError"),
+        }
+    }
 }
