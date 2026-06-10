@@ -100,3 +100,15 @@ pub enum PluginIOType {
     // N输入-1输出
     ManyOne,
 }
+
+/// 插件日志级别
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[stabby::stabby]
+#[repr(u8)]
+pub enum PluginLogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}

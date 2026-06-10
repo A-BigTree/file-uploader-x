@@ -8,20 +8,21 @@ use file_uploader_plugins::pre_upload::file_type_filter::FileTypeFilter;
 use file_uploader_sdk::models::ctx::UploadInputCtx;
 
 fn main() {
-    // init_logging;
     if let Err(e) = init_logging() {
         eprintln!("Failed to initialize logging: {}", e);
         return;
     } else {
         info!("Logging initialized");
     }
-    // 测试插件执行
+
     let ctx = UploadInputCtx {
         file_list: vec![],
         config_info: None,
         extra_info: None,
         related_process_info: None
     };
+
+    info!("=== Testing IN-PROCESS plugin ===");
     let Ok(plugin) = UploadPluginInfo::new_in_process(
         "./pre_upload_plugins.json",
         Box::new(FileTypeFilter),
@@ -32,6 +33,8 @@ fn main() {
     info!("Plugin loaded: {}", plugin.id);
     let result = plugin.slot.execute(&ctx);
     info!("Plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
+
+    info!("=== Testing DYLIB plugin WITH logger ===");
     let Ok(dylib_plugin) = UploadPluginInfo::new_from_dylib_path(
         "./libuploader_example_plugin.dylib"
     ) else {
@@ -39,8 +42,6 @@ fn main() {
         return;
     };
     info!("Dylib plugin loaded: {}", dylib_plugin.id);
-    dylib_plugin.slot.on_load();
     let result = dylib_plugin.slot.execute(&ctx);
     info!("Dylib plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
-    dylib_plugin.slot.on_unload();
 }

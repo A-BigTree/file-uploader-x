@@ -1,7 +1,7 @@
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
-use file_uploader_sdk::models::enums::{UploadConfigType, UploadPhase};
-use file_uploader_sdk::models::interface::{FnGetDylibPlugin, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
+use file_uploader_sdk::models::enums::{PluginLogLevel, UploadConfigType, UploadPhase};
+use file_uploader_sdk::models::interface::{FnGetDylibPlugin, PluginLogCallback, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
 use file_uploader_sdk::utils::ctx_util::{convert_input_ctx_s, convert_output_ctx};
 use libloading::Library;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,24 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::error;
+use std::panic;
+use tracing::{trace, debug, info, warn, error};
+
+pub extern "C" fn plugin_log_callback(level: PluginLogLevel, message: stabby::string::String) {
+    let message: String = message.into();
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        match level {
+            PluginLogLevel::Trace => trace!("{}", message),
+            PluginLogLevel::Debug => debug!("{}", message),
+            PluginLogLevel::Info => info!("{}", message),
+            PluginLogLevel::Warn => warn!("{}", message),
+            PluginLogLevel::Error => error!("{}", message),
+        }
+    }));
+    if let Err(_) = result {
+        error!("Plugin logging panicked: {}", message);
+    }
+}
 
 /// **插件统一插槽**
 /// - 不同来源插件统一封装相同的行为
@@ -198,6 +215,8 @@ impl UploadPluginInfo {
 
         // 6. 调用函数获取插件实例
         let plugin_box = get_plugin();
+
+        plugin_box.set_logger(plugin_log_callback);
 
         // 7. 构建 PluginSlot
         let slot = Arc::new(PluginSlot::Dylib {

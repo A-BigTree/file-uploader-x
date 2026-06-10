@@ -33,13 +33,12 @@ where
 }
 
 pub fn init_logging() -> io::Result<()> {
+    use tracing_log::LogTracer;
     use tracing_subscriber::fmt;
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::EnvFilter;
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
-
-    // let file = std::fs::File::create(log_file_path)?;
 
     let stdout_layer = fmt::layer()
         .with_target(false)
@@ -54,13 +53,14 @@ pub fn init_logging() -> io::Result<()> {
         .with_filter(env_filter);
     */
 
-    let subscriber = tracing_subscriber::registry()
+    tracing_subscriber::registry()
         .with(stdout_layer)
         // .with(file_layer)
-        ;
+        .init();
 
-    tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    if let Err(e) = LogTracer::init() {
+        eprintln!("Failed to init log tracer: {}", e);
+    }
 
     Ok(())
 }
