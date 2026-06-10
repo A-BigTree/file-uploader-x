@@ -2,16 +2,15 @@ use file_uploader_sdk::models::ctx_stabby::{UploadInputCtxS, UploadOutputCtxS};
 use file_uploader_sdk::models::enums::OutputResultType;
 use file_uploader_sdk::models::interface::UploadDylibPlugin;
 use file_uploader_sdk::utils::ctx_util::convert_input_ctx;
-use tracing::info;
 
 pub struct UploaderTestExamplePlugin;
 
 impl UploadDylibPlugin for UploaderTestExamplePlugin {
     extern "C" fn execute(&self, ctx: &UploadInputCtxS) -> UploadOutputCtxS {
-        info!("UploaderTestExamplePlugin execute...");
+        println!("UploaderTestExamplePlugin execute...");
         let ctx = convert_input_ctx(ctx);
         let json = serde_json::to_string(&ctx).unwrap_or("input error".to_string());
-        info!("UploaderTestExamplePlugin get input: {}", json);
+        println!("UploaderTestExamplePlugin get input: {}", json);
         UploadOutputCtxS {
             result: OutputResultType::Success,
             message: "成功".to_string().into(),
@@ -21,11 +20,11 @@ impl UploadDylibPlugin for UploaderTestExamplePlugin {
     }
 
     extern "C" fn on_load(&self) {
-        info!("UploaderTestExamplePlugin loading...")
+        println!("UploaderTestExamplePlugin loading...")
     }
 
     extern "C" fn on_unload(&self) {
-        info!("UploaderTestExamplePlugin unloading...")
+        println!("UploaderTestExamplePlugin unloading...")
     }
 }
 

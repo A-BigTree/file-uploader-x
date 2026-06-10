@@ -54,10 +54,13 @@ pub fn init_logging() -> io::Result<()> {
         .with_filter(env_filter);
     */
 
-    tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
         .with(stdout_layer)
         // .with(file_layer)
-        .init();
+        ;
+
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
     Ok(())
 }
