@@ -22,18 +22,4 @@ fn main() {
         error!("Plugin load error");
         return;
     };
-    info!("Plugin loaded: {}", serde_json::to_string(&plugin).unwrap_or("plugin error".to_string()));
-    // 测试插件加载
-    plugin.slot.on_load();
-    // 测试插件执行
-    let ctx = UploadInputCtx {
-        file_list: vec![],
-        config_info: None,
-        extra_info: None,
-        related_process_info: None
-    };
-    let output = plugin.slot.execute(&ctx);
-    info!("Plugin execute result: {}", serde_json::to_string(&output).unwrap_or("plugin error".to_string()));
-    // 测试插件卸载
-    plugin.slot.on_unload();
 }
