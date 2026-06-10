@@ -29,6 +29,7 @@ impl UploadDylibPlugin for UploaderTestExamplePlugin {
     }
 }
 
+#[unsafe(no_mangle)]
 pub extern "C" fn get_dylib_plugin()
 -> stabby::dynptr!(stabby::boxed::Box<dyn UploadDylibPlugin + Send + Sync>) {
     stabby::boxed::Box::new(UploaderTestExamplePlugin).into()
