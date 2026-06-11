@@ -1,8 +1,8 @@
 use crate::pipeline::plugin::UploadPluginInfo;
-use serde_json::Value;
-use std::sync::Arc;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
+use serde_json::Value;
+use std::sync::Arc;
 
 pub enum PluginRegistryStatus {
     // 禁用
@@ -47,7 +47,7 @@ impl PluginRegistryInfo {
     }
 
     pub fn on_unload(&self) {
-        self.plugin_instance.on_unload();
+        self.plugin_instance.slot.on_unload();
     }
 
     pub fn get_plugin_instance(&self) -> Arc<UploadPluginInfo> {
@@ -88,7 +88,7 @@ impl Ord for PluginRegistryInfo {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let self_phase = self.get_plugin_phase();
         let other_phase = other.get_plugin_phase();
-        
+
         let phase_order = |phase: &UploadPhase| -> u8 {
             match phase {
                 UploadPhase::Input => 0,
@@ -98,7 +98,7 @@ impl Ord for PluginRegistryInfo {
                 UploadPhase::Output => 4,
             }
         };
-        
+
         match phase_order(&self_phase).cmp(&phase_order(&other_phase)) {
             std::cmp::Ordering::Equal => self.priority.cmp(&other.priority),
             other => other,
@@ -114,6 +114,9 @@ pub struct UploadPluginRegistryTable {
 impl UploadPluginRegistryTable {
     pub fn new(id: String, mut plugins: Vec<PluginRegistryInfo>) -> Self {
         plugins.sort();
+        for plugin in &plugins {
+            plugin.on_load();
+        }
         UploadPluginRegistryTable { id, plugins }
     }
 
@@ -157,11 +160,8 @@ mod tests {
             "mock_plugin"
         }
 
-        fn execute(
-            &self,
-            ctx: &file_uploader_sdk::models::ctx::UploadInputCtx,
-        ) -> file_uploader_sdk::models::ctx::UploadOutputCtx {
-            file_uploader_sdk::models::ctx::UploadOutputCtx {
+        fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
+            UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Success,
                 message: "mock execute".to_string(),
                 file_list: None,
@@ -179,10 +179,10 @@ mod tests {
             author: Some("test".to_string()),
             phase,
         });
-        
+
         let plugin = Box::new(MockPlugin);
         let slot = Arc::new(PluginSlot::InProcess(std::sync::Arc::new(*plugin) as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>));
-        
+
         Arc::new(UploadPluginInfo {
             id: format!("test_{}", name),
             meta,
@@ -210,27 +210,36 @@ mod tests {
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p2 = PluginRegistryInfo::new(
             create_mock_plugin_info("p2", UploadPhase::Input),
             1,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p3 = PluginRegistryInfo::new(
             create_mock_plugin_info("p3", UploadPhase::Upload),
             1,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let mut plugins = vec![p1, p2, p3];
         plugins.sort();
-        
-        assert_eq!(phase_order(&plugins[0].get_plugin_phase()), phase_order(&UploadPhase::Input));
-        assert_eq!(phase_order(&plugins[1].get_plugin_phase()), phase_order(&UploadPhase::Upload));
-        assert_eq!(phase_order(&plugins[2].get_plugin_phase()), phase_order(&UploadPhase::PostUpload));
+
+        assert_eq!(
+            phase_order(&plugins[0].get_plugin_phase()),
+            phase_order(&UploadPhase::Input)
+        );
+        assert_eq!(
+            phase_order(&plugins[1].get_plugin_phase()),
+            phase_order(&UploadPhase::Upload)
+        );
+        assert_eq!(
+            phase_order(&plugins[2].get_plugin_phase()),
+            phase_order(&UploadPhase::PostUpload)
+        );
     }
 
     #[test]
@@ -241,24 +250,24 @@ mod tests {
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p2 = PluginRegistryInfo::new(
             create_mock_plugin_info("p2", UploadPhase::Upload),
             1,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p3 = PluginRegistryInfo::new(
             create_mock_plugin_info("p3", UploadPhase::Upload),
             5,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let mut plugins = vec![p1, p2, p3];
         plugins.sort();
-        
+
         assert_eq!(plugins[0].priority, 1);
         assert_eq!(plugins[1].priority, 5);
         assert_eq!(plugins[2].priority, 10);
@@ -272,38 +281,50 @@ mod tests {
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p2 = PluginRegistryInfo::new(
             create_mock_plugin_info("p2", UploadPhase::Upload),
             1,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p3 = PluginRegistryInfo::new(
             create_mock_plugin_info("p3", UploadPhase::PreUpload),
             10,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p4 = PluginRegistryInfo::new(
             create_mock_plugin_info("p4", UploadPhase::PreUpload),
             5,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let mut plugins = vec![p1, p2, p3, p4];
         plugins.sort();
-        
-        assert_eq!(phase_order(&plugins[0].get_plugin_phase()), phase_order(&UploadPhase::PreUpload));
+
+        assert_eq!(
+            phase_order(&plugins[0].get_plugin_phase()),
+            phase_order(&UploadPhase::PreUpload)
+        );
         assert_eq!(plugins[0].priority, 5);
-        assert_eq!(phase_order(&plugins[1].get_plugin_phase()), phase_order(&UploadPhase::PreUpload));
+        assert_eq!(
+            phase_order(&plugins[1].get_plugin_phase()),
+            phase_order(&UploadPhase::PreUpload)
+        );
         assert_eq!(plugins[1].priority, 10);
-        assert_eq!(phase_order(&plugins[2].get_plugin_phase()), phase_order(&UploadPhase::Upload));
+        assert_eq!(
+            phase_order(&plugins[2].get_plugin_phase()),
+            phase_order(&UploadPhase::Upload)
+        );
         assert_eq!(plugins[2].priority, 1);
-        assert_eq!(phase_order(&plugins[3].get_plugin_phase()), phase_order(&UploadPhase::Upload));
+        assert_eq!(
+            phase_order(&plugins[3].get_plugin_phase()),
+            phase_order(&UploadPhase::Upload)
+        );
         assert_eq!(plugins[3].priority, 5);
     }
 
@@ -315,22 +336,22 @@ mod tests {
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p2 = PluginRegistryInfo::new(
             create_mock_plugin_info("p2", UploadPhase::PreUpload),
             10,
             PluginRegistryStatus::Enable,
             None,
         );
-        
-        let registry = UploadPluginRegistryTable::new(
-            "test_registry".to_string(),
-            vec![p1, p2],
-        );
-        
+
+        let registry = UploadPluginRegistryTable::new("test_registry".to_string(), vec![p1, p2]);
+
         assert_eq!(registry.get_id(), "test_registry");
         assert_eq!(registry.get_all_plugins().len(), 2);
-        assert_eq!(phase_order(&registry.get_all_plugins()[0].get_plugin_phase()), phase_order(&UploadPhase::PreUpload));
+        assert_eq!(
+            phase_order(&registry.get_all_plugins()[0].get_plugin_phase()),
+            phase_order(&UploadPhase::PreUpload)
+        );
     }
 
     #[test]
@@ -341,35 +362,130 @@ mod tests {
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p2 = PluginRegistryInfo::new(
             create_mock_plugin_info("p2", UploadPhase::Upload),
             1,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let p3 = PluginRegistryInfo::new(
             create_mock_plugin_info("p3", UploadPhase::Upload),
             2,
             PluginRegistryStatus::Enable,
             None,
         );
-        
+
         let registry = UploadPluginRegistryTable::new(
             "test_registry".to_string(),
             vec![p1, p2, p3],
         );
-        
+
         let input_plugins = registry.get_plugins_by_phase(UploadPhase::Input);
         assert_eq!(input_plugins.len(), 1);
-        
+
         let upload_plugins = registry.get_plugins_by_phase(UploadPhase::Upload);
         assert_eq!(upload_plugins.len(), 2);
         assert_eq!(upload_plugins[0].priority, 1);
         assert_eq!(upload_plugins[1].priority, 2);
-        
+
         let post_upload_plugins = registry.get_plugins_by_phase(UploadPhase::PostUpload);
         assert_eq!(post_upload_plugins.len(), 0);
+    }
+
+    #[test]
+    fn test_upload_plugin_registry_table_on_load_called() {
+        struct MockPluginWithLoadCounter {
+            load_count: std::sync::atomic::AtomicU32,
+        }
+
+        impl MockPluginWithLoadCounter {
+            fn new() -> Self {
+                MockPluginWithLoadCounter {
+                    load_count: std::sync::atomic::AtomicU32::new(0),
+                }
+            }
+
+            fn get_load_count(&self) -> u32 {
+                self.load_count.load(std::sync::atomic::Ordering::SeqCst)
+            }
+        }
+
+        impl file_uploader_sdk::models::interface::UploadPlugin for MockPluginWithLoadCounter {
+            fn name(&self) -> &'static str {
+                "mock_plugin_with_counter"
+            }
+
+            fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
+                UploadOutputCtx {
+                    result: file_uploader_sdk::models::enums::OutputResultType::Success,
+                    message: "mock execute".to_string(),
+                    file_list: None,
+                    extra_info: None,
+                }
+            }
+
+            fn on_load(&self) {
+                self.load_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
+        let meta = Arc::new(PluginMeta {
+            name: "test_plugin".to_string(),
+            title: "Test Plugin".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Test plugin with load counter".to_string(),
+            author: Some("test".to_string()),
+            phase: UploadPhase::Upload,
+        });
+
+        let plugin1 = std::sync::Arc::new(MockPluginWithLoadCounter::new());
+        let plugin2 = std::sync::Arc::new(MockPluginWithLoadCounter::new());
+
+        let slot1 = Arc::new(PluginSlot::InProcess(
+            plugin1.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+        ));
+        let slot2 = Arc::new(PluginSlot::InProcess(
+            plugin2.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+        ));
+
+        let plugin_info1 = Arc::new(UploadPluginInfo {
+            id: "test_plugin_1".to_string(),
+            meta: meta.clone(),
+            default_config: None,
+            path: "/test/path".to_string(),
+            slot: slot1,
+        });
+
+        let plugin_info2 = Arc::new(UploadPluginInfo {
+            id: "test_plugin_2".to_string(),
+            meta,
+            default_config: None,
+            path: "/test/path".to_string(),
+            slot: slot2,
+        });
+
+        let p1 = PluginRegistryInfo::new(
+            plugin_info1,
+            1,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+
+        let p2 = PluginRegistryInfo::new(
+            plugin_info2,
+            2,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+
+        assert_eq!(plugin1.get_load_count(), 0);
+        assert_eq!(plugin2.get_load_count(), 0);
+
+        UploadPluginRegistryTable::new("test_registry".to_string(), vec![p1, p2]);
+
+        assert_eq!(plugin1.get_load_count(), 1);
+        assert_eq!(plugin2.get_load_count(), 1);
     }
 }
