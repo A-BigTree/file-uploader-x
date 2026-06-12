@@ -2,6 +2,7 @@ use crate::pipeline::plugin::UploadPluginInfo;
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
+use file_uploader_sdk::models::interface::{PipelineCallback, PipelineEvent, PipelineEventKind};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -155,6 +156,143 @@ impl UploadPluginRegistryTable {
             Ok(())
         } else {
             Err(errors)
+        }
+    }
+
+    fn output_to_input(
+        output: &UploadOutputCtx,
+        source_ctx: &UploadInputCtx,
+    ) -> UploadInputCtx {
+        let mut extra_info = source_ctx.extra_info.clone().unwrap_or_default();
+        if let Some(ref output_extra) = output.extra_info {
+            for (k, v) in output_extra {
+                extra_info.insert(k.clone(), v.clone());
+            }
+        }
+
+        UploadInputCtx {
+            file_list: output.file_list.clone().unwrap_or_default(),
+            config_info: Arc::new(None),
+            extra_info: if extra_info.is_empty() {
+                None
+            } else {
+                Some(extra_info)
+            },
+            related_process_info: source_ctx.related_process_info.clone(),
+        }
+    }
+
+    pub fn execute_pipeline(
+        &self,
+        input_ctx: UploadInputCtx,
+        callback: Option<&dyn PipelineCallback>,
+    ) -> UploadOutputCtx {
+        let phases = [
+            UploadPhase::Input,
+            UploadPhase::PreUpload,
+            UploadPhase::Upload,
+            UploadPhase::PostUpload,
+            UploadPhase::Output,
+        ];
+
+        let mut current_ctx = input_ctx;
+        let mut last_output: Option<UploadOutputCtx> = None;
+
+        for phase in &phases {
+            let phase_plugins = self.get_plugins_by_phase(phase.clone());
+            if phase_plugins.is_empty() {
+                continue;
+            }
+
+            if let Some(cb) = &callback {
+                let event = PipelineEvent {
+                    kind: PipelineEventKind::PhaseStart,
+                    phase: phase.clone(),
+                    plugin_id: None,
+                };
+                cb.on_event(&event, &current_ctx, None);
+            }
+
+            let mut phase_last_output: Option<UploadOutputCtx> = None;
+
+            for plugin in &phase_plugins {
+                let plugin_input = UploadInputCtx {
+                    file_list: current_ctx.file_list.clone(),
+                    config_info: Arc::new(plugin.registry_config.clone()),
+                    extra_info: current_ctx.extra_info.clone(),
+                    related_process_info: current_ctx.related_process_info.clone(),
+                };
+
+                if let Some(cb) = &callback {
+                    let event = PipelineEvent {
+                        kind: PipelineEventKind::PluginStart,
+                        phase: phase.clone(),
+                        plugin_id: Some(&plugin.plugin_instance.id),
+                    };
+                    cb.on_event(&event, &plugin_input, None);
+                }
+
+                let output = match plugin.execute(&plugin_input) {
+                    Ok(ctx) => ctx,
+                    Err(e) => {
+                        let fail_ctx = UploadOutputCtx {
+                            result: file_uploader_sdk::models::enums::OutputResultType::Failed,
+                            message: e.to_string(),
+                            file_list: None,
+                            extra_info: None,
+                        };
+                        if let Some(cb) = &callback {
+                            let event = PipelineEvent {
+                                kind: PipelineEventKind::PluginEnd,
+                                phase: phase.clone(),
+                                plugin_id: Some(&plugin.plugin_instance.id),
+                            };
+                            cb.on_event(&event, &plugin_input, Some(&fail_ctx));
+                        }
+                        return fail_ctx;
+                    }
+                };
+
+                if let Some(cb) = &callback {
+                    let event = PipelineEvent {
+                        kind: PipelineEventKind::PluginEnd,
+                        phase: phase.clone(),
+                        plugin_id: Some(&plugin.plugin_instance.id),
+                    };
+                    cb.on_event(&event, &plugin_input, Some(&output));
+                }
+
+                if matches!(
+                    output.result,
+                    file_uploader_sdk::models::enums::OutputResultType::Failed
+                ) {
+                    return output;
+                }
+
+                phase_last_output = Some(output.clone());
+                current_ctx = Self::output_to_input(&output, &current_ctx);
+            }
+
+            if let Some(cb) = &callback {
+                let event = PipelineEvent {
+                    kind: PipelineEventKind::PhaseEnd,
+                    phase: phase.clone(),
+                    plugin_id: None,
+                };
+                cb.on_event(&event, &current_ctx, phase_last_output.as_ref());
+            }
+
+            last_output = phase_last_output;
+        }
+
+        match last_output {
+            Some(output) => output,
+            None => UploadOutputCtx {
+                result: file_uploader_sdk::models::enums::OutputResultType::Success,
+                message: String::new(),
+                file_list: Some(current_ctx.file_list),
+                extra_info: current_ctx.extra_info,
+            },
         }
     }
 }

@@ -85,13 +85,15 @@ pub struct UploadProcessCtx {
     pub phase: UploadPhase,
     // 扩展信息
     pub extra_info: Option<HashMap<String, String>>,
+    // 流程模版ID
+    pub template_id: String,
     // 关联任务
     #[serde(skip)]
     pub related_task_info: Weak<UploadTaskCtx>,
 }
 
 impl UploadProcessCtx {
-    pub fn new(id: String, related_task_info: Weak<UploadTaskCtx>) -> Self {
+    pub fn new(id: String, template_id: String, related_task_info: Weak<UploadTaskCtx>) -> Self {
         Self {
             id,
             status: UploadProcessStatus::Init,
@@ -100,6 +102,7 @@ impl UploadProcessCtx {
             end_time: None,
             phase: UploadPhase::Input,
             extra_info: None,
+            template_id,
             related_task_info,
         }
     }
@@ -187,7 +190,7 @@ pub struct UploadInputCtx {
 /**
  * 输出结果
  */
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UploadOutputCtx {
     // 输出结果
     pub result: OutputResultType,
