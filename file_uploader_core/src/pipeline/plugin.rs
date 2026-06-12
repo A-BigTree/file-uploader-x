@@ -10,7 +10,7 @@ use stabby::boxed::Box as SBox;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::panic;
 use tracing::{trace, debug, info, warn, error};
 
@@ -76,6 +76,22 @@ impl Drop for PluginSlot {
     fn drop(&mut self) {
         self.on_unload();
     }
+}
+
+enum LazySlotSource {
+    InProcess {
+        config_path: String,
+        plugin: Arc<dyn UploadPlugin>,
+    },
+    Dylib {
+        config_path: String,
+        dylib_path: String,
+    },
+}
+
+pub struct LazyPluginSlot {
+    source: LazySlotSource,
+    inner: OnceLock<Arc<PluginSlot>>,
 }
 
 /// **插件元数据**
