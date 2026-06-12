@@ -146,7 +146,8 @@ impl UploadPluginRegistryTable {
     }
 
     pub fn preload_all(&self) -> Result<(), Vec<UploadError>> {
-        let errors: Vec<UploadError> = self.plugins
+        let errors: Vec<UploadError> = self
+            .plugins
             .iter()
             .filter_map(|p| p.plugin_instance.slot.get_or_init().err())
             .collect();
@@ -191,7 +192,8 @@ mod tests {
             phase,
         });
 
-        let plugin = std::sync::Arc::new(MockPlugin) as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
+        let plugin = std::sync::Arc::new(MockPlugin)
+            as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
                 config_path: "/test/path".to_string(),
@@ -394,10 +396,8 @@ mod tests {
             None,
         );
 
-        let registry = UploadPluginRegistryTable::new(
-            "test_registry".to_string(),
-            vec![p1, p2, p3],
-        );
+        let registry =
+            UploadPluginRegistryTable::new("test_registry".to_string(), vec![p1, p2, p3]);
 
         let input_plugins = registry.get_plugins_by_phase(UploadPhase::Input);
         assert_eq!(input_plugins.len(), 1);
@@ -444,7 +444,8 @@ mod tests {
             }
 
             fn on_load(&self) {
-                self.load_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.load_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
         }
 
@@ -463,14 +464,16 @@ mod tests {
         let slot1 = LazyPluginSlot {
             source: LazySlotSource::InProcess {
                 config_path: "/test/path".to_string(),
-                plugin: plugin1.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+                plugin: plugin1.clone()
+                    as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
             inner: OnceLock::new(),
         };
         let slot2 = LazyPluginSlot {
             source: LazySlotSource::InProcess {
                 config_path: "/test/path".to_string(),
-                plugin: plugin2.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+                plugin: plugin2.clone()
+                    as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
             inner: OnceLock::new(),
         };
@@ -491,19 +494,9 @@ mod tests {
             slot: slot2,
         });
 
-        let p1 = PluginRegistryInfo::new(
-            plugin_info1,
-            1,
-            PluginRegistryStatus::Enable,
-            None,
-        );
+        let p1 = PluginRegistryInfo::new(plugin_info1, 1, PluginRegistryStatus::Enable, None);
 
-        let p2 = PluginRegistryInfo::new(
-            plugin_info2,
-            2,
-            PluginRegistryStatus::Enable,
-            None,
-        );
+        let p2 = PluginRegistryInfo::new(plugin_info2, 2, PluginRegistryStatus::Enable, None);
 
         assert_eq!(plugin1.get_load_count(), 0);
         assert_eq!(plugin2.get_load_count(), 0);

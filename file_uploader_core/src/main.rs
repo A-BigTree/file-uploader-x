@@ -1,12 +1,12 @@
 mod config;
 mod pipeline;
 
-use std::sync::Arc;
 use config::init_logging;
-use tracing::{error, info};
 use file_uploader_core::pipeline::plugin::UploadPluginInfo;
 use file_uploader_plugins::pre_upload::file_type_filter::FileTypeFilter;
 use file_uploader_sdk::models::ctx::UploadInputCtx;
+use std::sync::Arc;
+use tracing::{error, info};
 
 fn main() {
     if let Err(e) = init_logging() {
@@ -20,14 +20,13 @@ fn main() {
         file_list: vec![],
         config_info: Arc::new(None),
         extra_info: None,
-        related_process_info: None
+        related_process_info: None,
     };
 
     info!("=== Testing IN-PROCESS plugin ===");
-    let Ok(plugin) = UploadPluginInfo::new_in_process(
-        "./pre_upload_plugins.json",
-        Box::new(FileTypeFilter),
-    ) else {
+    let Ok(plugin) =
+        UploadPluginInfo::new_in_process("./pre_upload_plugins.json", Box::new(FileTypeFilter))
+    else {
         error!("Plugin load error");
         return;
     };
@@ -39,12 +38,15 @@ fn main() {
             return;
         }
     };
-    info!("Plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
+    info!(
+        "Plugin execute result: {:?}",
+        serde_json::to_string(&result).unwrap_or("plugin error".to_string())
+    );
 
     info!("=== Testing DYLIB plugin WITH logger ===");
-    let Ok(dylib_plugin) = UploadPluginInfo::new_from_dylib_path(
-        "./libuploader_example_plugin.dylib"
-    ) else {
+    let Ok(dylib_plugin) =
+        UploadPluginInfo::new_from_dylib_path("./libuploader_example_plugin.dylib")
+    else {
         error!("Dylib plugin load error");
         return;
     };
@@ -56,5 +58,8 @@ fn main() {
             return;
         }
     };
-    info!("Dylib plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
+    info!(
+        "Dylib plugin execute result: {:?}",
+        serde_json::to_string(&result).unwrap_or("plugin error".to_string())
+    );
 }

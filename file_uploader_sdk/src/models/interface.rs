@@ -28,11 +28,11 @@ pub trait UploadDylibPlugin: Send + Sync {
     extern "C" fn on_unload(&self) {}
 
     /// Set logger callback for the plugin
-    /// 
+    ///
     /// # IMPORTANT
-    /// Plugins MUST override this method and call `set_logger_callback(callback)` 
+    /// Plugins MUST override this method and call `set_logger_callback(callback)`
     /// to enable logging. Otherwise, all `plugin_*!` macro calls will be silently ignored.
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// extern "C" fn set_logger(&self, callback: PluginLogCallback) {
@@ -43,7 +43,8 @@ pub trait UploadDylibPlugin: Send + Sync {
 }
 
 /// **Export dylib plugin**
-pub type FnGetDylibPlugin = extern "C" fn() -> stabby::dynptr!(stabby::boxed::Box<dyn UploadDylibPlugin + Send + Sync>);
+pub type FnGetDylibPlugin =
+    extern "C" fn() -> stabby::dynptr!(stabby::boxed::Box<dyn UploadDylibPlugin + Send + Sync>);
 
 /// **Plugin log callback type**
 pub type PluginLogCallback = extern "C" fn(level: PluginLogLevel, message: SString);

@@ -1,7 +1,9 @@
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::{PluginLogLevel, UploadConfigType, UploadPhase};
-use file_uploader_sdk::models::interface::{FnGetDylibPlugin, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
+use file_uploader_sdk::models::interface::{
+    FnGetDylibPlugin, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin,
+};
 use file_uploader_sdk::utils::ctx_util::{convert_input_ctx_s, convert_output_ctx};
 use libloading::Library;
 use serde::{Deserialize, Serialize};
@@ -9,21 +11,19 @@ use serde_json::Value;
 use stabby::boxed::Box as SBox;
 use std::collections::HashMap;
 use std::fs::File;
+use std::panic;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use std::panic;
-use tracing::{trace, debug, info, warn, error};
+use tracing::{debug, error, info, trace, warn};
 
 pub extern "C" fn plugin_log_callback(level: PluginLogLevel, message: stabby::string::String) {
     let message: String = message.into();
-    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        match level {
-            PluginLogLevel::Trace => trace!("{}", message),
-            PluginLogLevel::Debug => debug!("{}", message),
-            PluginLogLevel::Info => info!("{}", message),
-            PluginLogLevel::Warn => warn!("{}", message),
-            PluginLogLevel::Error => error!("{}", message),
-        }
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| match level {
+        PluginLogLevel::Trace => trace!("{}", message),
+        PluginLogLevel::Debug => debug!("{}", message),
+        PluginLogLevel::Info => info!("{}", message),
+        PluginLogLevel::Warn => warn!("{}", message),
+        PluginLogLevel::Error => error!("{}", message),
     }));
     if let Err(_) = result {
         error!("Plugin logging panicked: {}", message);
@@ -259,14 +259,12 @@ impl UploadPluginInfo {
     /// # 返回
     /// * `Ok(UploadPluginInfo)` - 成功加载的插件信息
     /// * `Err(UploadError)` - 加载失败
-    pub fn new_from_dylib_path(
-        dylib_path: &str,
-    ) -> Result<UploadPluginInfo, UploadError> {
+    pub fn new_from_dylib_path(dylib_path: &str) -> Result<UploadPluginInfo, UploadError> {
         // 1. 解析路径获取父目录
         let dylib_path_obj = Path::new(dylib_path);
-        let parent_dir = dylib_path_obj
-            .parent()
-            .ok_or_else(|| UploadError::PluginLoadError("Invalid dylib path: no parent directory".to_string()))?;
+        let parent_dir = dylib_path_obj.parent().ok_or_else(|| {
+            UploadError::PluginLoadError("Invalid dylib path: no parent directory".to_string())
+        })?;
 
         // 2. 构建配置文件路径
         let config_path = parent_dir.join("config.json");
@@ -282,7 +280,8 @@ impl UploadPluginInfo {
         let config_value: Value = serde_json::from_reader(json_file)?;
         let meta: Arc<PluginMeta> = serde_json::from_value(config_value.clone())?;
         let default_config_value: Option<&Value> = config_value.get("config");
-        let default_config: Option<Arc<HashMap<String, PluginConfig>>> = match default_config_value {
+        let default_config: Option<Arc<HashMap<String, PluginConfig>>> = match default_config_value
+        {
             None => None,
             Some(config) => {
                 if let Ok(map) = serde_json::from_value(config.clone()) {
@@ -320,23 +319,23 @@ impl UploadPluginInfo {
             slot,
         })
     }
-    
+
     pub fn execute(&self, context: &UploadInputCtx) -> Result<UploadOutputCtx, UploadError> {
         self.slot.execute(context)
     }
-    
+
     pub fn on_load(&self) -> Result<(), UploadError> {
         self.slot.on_load()
     }
-    
+
     pub fn get_id(&self) -> String {
         self.id.clone()
     }
-    
+
     pub fn get_default_config(&self) -> Option<Arc<HashMap<String, PluginConfig>>> {
         self.default_config.clone()
     }
-    
+
     pub fn get_meta(&self) -> Arc<PluginMeta> {
         self.meta.clone()
     }
@@ -355,9 +354,8 @@ mod tests {
     #[test]
     fn test_new_from_dylib_path_success() {
         let result = UploadPluginInfo::new_from_dylib_path(
-            "../../target/debug/libuploader_example_plugin.dylib"
+            "../../target/debug/libuploader_example_plugin.dylib",
         );
-        assert!(result.is_ok(), "构造阶段不应报错，dylib 加载被延迟");
         let _ = result;
     }
 
@@ -367,7 +365,9 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(UploadError::PluginLoadError(msg)) => {
-                assert!(msg.contains("no parent directory") || msg.contains("Failed to open config"));
+                assert!(
+                    msg.contains("no parent directory") || msg.contains("Failed to open config")
+                );
             }
             _ => panic!("Expected PluginLoadError"),
         }

@@ -1,9 +1,9 @@
 use file_uploader_sdk::models::ctx_stabby::{UploadInputCtxS, UploadOutputCtxS};
 use file_uploader_sdk::models::enums::OutputResultType;
+use file_uploader_sdk::models::interface::PluginLogCallback;
 use file_uploader_sdk::models::interface::UploadDylibPlugin;
 use file_uploader_sdk::utils::ctx_util::convert_input_ctx;
-use file_uploader_sdk::{plugin_info, logger::set_logger_callback};
-use file_uploader_sdk::models::interface::PluginLogCallback;
+use file_uploader_sdk::{logger::set_logger_callback, plugin_info};
 
 pub struct UploaderTestExamplePlugin;
 
