@@ -301,6 +301,10 @@ impl UploadPluginRegistryTable {
 mod tests {
     use super::*;
     use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginMeta};
+    use file_uploader_sdk::models::interface::{
+        PipelineCallback, PipelineEvent, PipelineEventKind,
+    };
+    use std::sync::Mutex;
     use std::sync::OnceLock;
 
     struct MockPlugin;
@@ -648,5 +652,261 @@ mod tests {
 
         assert_eq!(plugin1.get_load_count(), 1);
         assert_eq!(plugin2.get_load_count(), 1);
+    }
+
+    struct CallbackRecord {
+        pub kind: PipelineEventKind,
+        pub phase: UploadPhase,
+        pub plugin_id: Option<String>,
+    }
+
+    struct TestCallback {
+        pub records: Mutex<Vec<CallbackRecord>>,
+    }
+
+    impl TestCallback {
+        fn new() -> Self {
+            TestCallback {
+                records: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl PipelineCallback for TestCallback {
+        fn on_event(
+            &self,
+            event: &PipelineEvent,
+            _ctx: &UploadInputCtx,
+            _result: Option<&UploadOutputCtx>,
+        ) {
+            self.records.lock().unwrap().push(CallbackRecord {
+                kind: event.kind.clone(),
+                phase: event.phase.clone(),
+                plugin_id: event.plugin_id.map(|s| s.to_string()),
+            });
+        }
+    }
+
+    struct FailPlugin;
+
+    impl file_uploader_sdk::models::interface::UploadPlugin for FailPlugin {
+        fn name(&self) -> &'static str {
+            "fail_plugin"
+        }
+
+        fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
+            UploadOutputCtx {
+                result: file_uploader_sdk::models::enums::OutputResultType::Failed,
+                message: "intentional failure".to_string(),
+                file_list: None,
+                extra_info: None,
+            }
+        }
+    }
+
+    fn create_fail_plugin_info(name: &str, phase: UploadPhase) -> Arc<UploadPluginInfo> {
+        let meta = Arc::new(PluginMeta {
+            name: name.to_string(),
+            title: "Fail Plugin".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Fail plugin".to_string(),
+            author: Some("test".to_string()),
+            phase,
+        });
+        let plugin = std::sync::Arc::new(FailPlugin)
+            as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: "/test/path".to_string(),
+                plugin,
+            },
+            inner: OnceLock::new(),
+        };
+        Arc::new(UploadPluginInfo {
+            id: format!("test_{}", name),
+            meta,
+            default_config: None,
+            path: "/test/path".to_string(),
+            slot,
+        })
+    }
+
+    struct ConfigReadPlugin {
+        captured_config: Arc<Mutex<Arc<Option<Value>>>>,
+    }
+
+    impl ConfigReadPlugin {
+        fn new() -> Self {
+            ConfigReadPlugin {
+                captured_config: Arc::new(Mutex::new(Arc::new(None))),
+            }
+        }
+    }
+
+    impl file_uploader_sdk::models::interface::UploadPlugin for ConfigReadPlugin {
+        fn name(&self) -> &'static str {
+            "config_read_plugin"
+        }
+
+        fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
+            *self.captured_config.lock().unwrap() = ctx.config_info.clone();
+            UploadOutputCtx {
+                result: file_uploader_sdk::models::enums::OutputResultType::Success,
+                message: "ok".to_string(),
+                file_list: None,
+                extra_info: None,
+            }
+        }
+    }
+
+    #[test]
+    fn test_execute_pipeline_empty_registry() {
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![]);
+        let input = UploadInputCtx {
+            file_list: vec![],
+            config_info: Arc::new(None),
+            extra_info: None,
+            related_process_info: None,
+        };
+        let result = registry.execute_pipeline(input, None);
+        assert!(matches!(
+            result.result,
+            file_uploader_sdk::models::enums::OutputResultType::Success
+        ));
+    }
+
+    #[test]
+    fn test_execute_pipeline_single_plugin_callback_order() {
+        let plugin_info = create_mock_plugin_info("p1", UploadPhase::PreUpload);
+        let reg_info = PluginRegistryInfo::new(plugin_info, 1, PluginRegistryStatus::Enable, None);
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![reg_info]);
+
+        let input = UploadInputCtx {
+            file_list: vec![],
+            config_info: Arc::new(None),
+            extra_info: None,
+            related_process_info: None,
+        };
+
+        let cb = TestCallback::new();
+        let result = registry.execute_pipeline(input, Some(&cb));
+        assert!(matches!(
+            result.result,
+            file_uploader_sdk::models::enums::OutputResultType::Success
+        ));
+
+        let records = cb.records.lock().unwrap();
+        assert_eq!(records.len(), 4);
+        assert!(matches!(records[0].kind, PipelineEventKind::PhaseStart));
+        assert!(matches!(records[1].kind, PipelineEventKind::PluginStart));
+        assert!(matches!(records[2].kind, PipelineEventKind::PluginEnd));
+        assert!(matches!(records[3].kind, PipelineEventKind::PhaseEnd));
+        assert_eq!(records[1].plugin_id.as_deref(), Some("test_p1"));
+        assert!(matches!(records[0].phase, UploadPhase::PreUpload));
+    }
+
+    #[test]
+    fn test_execute_pipeline_plugin_failed_interrupts() {
+        let p1 = PluginRegistryInfo::new(
+            create_mock_plugin_info("p1", UploadPhase::PreUpload),
+            1,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+        let p2 = PluginRegistryInfo::new(
+            create_fail_plugin_info("p2", UploadPhase::Upload),
+            1,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+        let p3 = PluginRegistryInfo::new(
+            create_mock_plugin_info("p3", UploadPhase::PostUpload),
+            1,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+        let registry =
+            UploadPluginRegistryTable::new("test".to_string(), vec![p1, p2, p3]);
+
+        let input = UploadInputCtx {
+            file_list: vec![],
+            config_info: Arc::new(None),
+            extra_info: None,
+            related_process_info: None,
+        };
+
+        let cb = TestCallback::new();
+        let result = registry.execute_pipeline(input, Some(&cb));
+
+        assert!(matches!(
+            result.result,
+            file_uploader_sdk::models::enums::OutputResultType::Failed
+        ));
+        assert_eq!(result.message, "intentional failure");
+
+        let records = cb.records.lock().unwrap();
+        let phase_ends: Vec<_> = records
+            .iter()
+            .filter(|r| matches!(r.kind, PipelineEventKind::PhaseEnd))
+            .collect();
+        assert_eq!(phase_ends.len(), 1);
+        assert!(matches!(phase_ends[0].phase, UploadPhase::PreUpload));
+
+        let plugin_ends: Vec<_> = records
+            .iter()
+            .filter(|r| matches!(r.kind, PipelineEventKind::PluginEnd))
+            .collect();
+        assert_eq!(plugin_ends.len(), 2);
+    }
+
+    #[test]
+    fn test_execute_pipeline_registry_config_injected() {
+        let captured = Arc::new(Mutex::new(Arc::new(None)));
+        let plugin = Arc::new(ConfigReadPlugin {
+            captured_config: captured.clone(),
+        });
+        let meta = Arc::new(PluginMeta {
+            name: "config_read".to_string(),
+            title: "Config Read".to_string(),
+            version: "1.0.0".to_string(),
+            description: "reads config".to_string(),
+            author: None,
+            phase: UploadPhase::Upload,
+        });
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: "/test".to_string(),
+                plugin: plugin as Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+            },
+            inner: OnceLock::new(),
+        };
+        let plugin_info = Arc::new(UploadPluginInfo {
+            id: "test_config_read".to_string(),
+            meta,
+            default_config: None,
+            path: "/test".to_string(),
+            slot,
+        });
+
+        let config_value = serde_json::json!({"key": "value"});
+        let reg_info = PluginRegistryInfo::new(
+            plugin_info,
+            1,
+            PluginRegistryStatus::Enable,
+            Some(config_value.clone()),
+        );
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![reg_info]);
+
+        let input = UploadInputCtx {
+            file_list: vec![],
+            config_info: Arc::new(None),
+            extra_info: None,
+            related_process_info: None,
+        };
+
+        registry.execute_pipeline(input, None);
+
+        let config = captured.lock().unwrap();
+        assert_eq!(**config, Some(config_value));
     }
 }
