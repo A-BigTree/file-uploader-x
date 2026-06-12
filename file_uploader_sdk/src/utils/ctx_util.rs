@@ -1,12 +1,12 @@
 use crate::models::ctx::{UploadFileData, UploadInputCtx, UploadOutputCtx};
 use crate::models::ctx_stabby::{UploadFileDataS, UploadInputCtxS, UploadOutputCtxS};
-use std::collections::HashMap;
-use std::sync::Arc;
 use serde_json::Value;
 use stabby::option::Option as SOption;
 use stabby::string::String as SString;
 use stabby::sync::Arc as SArc;
 use stabby::vec::Vec as SVec;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::error;
 
 pub fn convert_file_data_s(input: &UploadFileData) -> UploadFileDataS {
@@ -40,7 +40,7 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
         }
     };
 
-    let config_info: SOption<SString> = match &input.config_info {
+    let config_info: SOption<SString> = match &*input.config_info {
         None => None.into(),
         Some(config) => {
             if let Ok(json) = serde_json::to_string(config) {
@@ -49,7 +49,7 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
                 error!("Failed to serialize config info");
                 None.into()
             }
-        },
+        }
     };
 
     UploadInputCtxS {
@@ -80,10 +80,8 @@ pub fn convert_input_ctx(input: &UploadInputCtxS) -> UploadInputCtx {
     UploadInputCtx {
         file_list,
         config_info: input.config_info.match_ref(
-            |config_info_s| {
-                get_config(config_info_s)
-            },
-            || None,
+            |config_info_s| Arc::new(get_config(config_info_s)),
+            || Arc::new(None),
         ),
         extra_info,
         related_process_info: None,

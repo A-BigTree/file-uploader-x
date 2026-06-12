@@ -1,7 +1,7 @@
-use tracing::info;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::OutputResultType;
 use file_uploader_sdk::models::interface::UploadPlugin;
+use tracing::info;
 
 pub struct FileTypeFilter;
 
@@ -11,12 +11,15 @@ impl UploadPlugin for FileTypeFilter {
     }
 
     fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
-        info!("file-type-filter: {}", serde_json::to_string(ctx).unwrap_or("input error".to_string()));
+        info!(
+            "file-type-filter: {}",
+            serde_json::to_string(ctx).unwrap_or("input error".to_string())
+        );
         UploadOutputCtx {
             result: OutputResultType::Success,
             message: "Success".to_string(),
             file_list: None,
-            extra_info: None
+            extra_info: None,
         }
     }
 }

@@ -12,9 +12,12 @@ fn main() {
     //                             build                      .parent()×2
     //                       debug                            .parent()×3  ← 目标
     let target_dir = PathBuf::from(&out_dir)
-        .parent().unwrap()   // plugin_auth_v1-xxx
-        .parent().unwrap()   // build
-        .parent().unwrap()   // target/debug  ← .dylib 所在目录
+        .parent()
+        .unwrap() // plugin_auth_v1-xxx
+        .parent()
+        .unwrap() // build
+        .parent()
+        .unwrap() // target/debug  ← .dylib 所在目录
         .to_path_buf();
 
     // 验证路径
@@ -23,23 +26,17 @@ fn main() {
     let src = PathBuf::from(&manifest_dir).join("pre_upload_plugins.json");
     let dst = target_dir.join("pre_upload_plugins.json");
 
-    fs::copy(&src, &dst).unwrap_or_else(|e| {
-        panic!("复制失败 {:?} → {:?}: {}", src, dst, e)
-    });
+    fs::copy(&src, &dst).unwrap_or_else(|e| panic!("复制失败 {:?} → {:?}: {}", src, dst, e));
 
     let src = PathBuf::from(&manifest_dir).join("post_upload_plugins.json");
     let dst = target_dir.join("post_upload_plugins.json");
 
-    fs::copy(&src, &dst).unwrap_or_else(|e| {
-        panic!("复制失败 {:?} → {:?}: {}", src, dst, e)
-    });
+    fs::copy(&src, &dst).unwrap_or_else(|e| panic!("复制失败 {:?} → {:?}: {}", src, dst, e));
 
     let src = PathBuf::from(&manifest_dir).join("upload_plugins.json");
     let dst = target_dir.join("upload_plugins.json");
 
-    fs::copy(&src, &dst).unwrap_or_else(|e| {
-        panic!("复制失败 {:?} → {:?}: {}", src, dst, e)
-    });
+    fs::copy(&src, &dst).unwrap_or_else(|e| panic!("复制失败 {:?} → {:?}: {}", src, dst, e));
 
     println!("cargo:rerun-if-changed=pre_upload_plugins.json");
     println!("cargo:rerun-if-changed=build.rs");

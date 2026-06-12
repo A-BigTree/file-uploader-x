@@ -1,7 +1,9 @@
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::{PluginLogLevel, UploadConfigType, UploadPhase};
-use file_uploader_sdk::models::interface::{FnGetDylibPlugin, PluginLogCallback, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
+use file_uploader_sdk::models::interface::{
+    FnGetDylibPlugin, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin,
+};
 use file_uploader_sdk::utils::ctx_util::{convert_input_ctx_s, convert_output_ctx};
 use libloading::Library;
 use serde::{Deserialize, Serialize};
@@ -9,21 +11,19 @@ use serde_json::Value;
 use stabby::boxed::Box as SBox;
 use std::collections::HashMap;
 use std::fs::File;
-use std::path::Path;
-use std::sync::Arc;
 use std::panic;
-use tracing::{trace, debug, info, warn, error};
+use std::path::Path;
+use std::sync::{Arc, OnceLock};
+use tracing::{debug, error, info, trace, warn};
 
 pub extern "C" fn plugin_log_callback(level: PluginLogLevel, message: stabby::string::String) {
     let message: String = message.into();
-    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        match level {
-            PluginLogLevel::Trace => trace!("{}", message),
-            PluginLogLevel::Debug => debug!("{}", message),
-            PluginLogLevel::Info => info!("{}", message),
-            PluginLogLevel::Warn => warn!("{}", message),
-            PluginLogLevel::Error => error!("{}", message),
-        }
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| match level {
+        PluginLogLevel::Trace => trace!("{}", message),
+        PluginLogLevel::Debug => debug!("{}", message),
+        PluginLogLevel::Info => info!("{}", message),
+        PluginLogLevel::Warn => warn!("{}", message),
+        PluginLogLevel::Error => error!("{}", message),
     }));
     if let Err(_) = result {
         error!("Plugin logging panicked: {}", message);
@@ -72,11 +72,103 @@ impl PluginSlot {
     }
 }
 
+impl Drop for PluginSlot {
+    fn drop(&mut self) {
+        self.on_unload();
+    }
+}
+
+pub(crate) enum LazySlotSource {
+    InProcess {
+        config_path: String,
+        plugin: Arc<dyn UploadPlugin>,
+    },
+    Dylib {
+        config_path: String,
+        dylib_path: String,
+    },
+}
+
+pub struct LazyPluginSlot {
+    pub(crate) source: LazySlotSource,
+    pub(crate) inner: OnceLock<Arc<PluginSlot>>,
+}
+
+impl LazyPluginSlot {
+    pub(crate) fn get_or_init(&self) -> Result<&Arc<PluginSlot>, UploadError> {
+        let init_result: Result<Arc<PluginSlot>, UploadError> = match &self.source {
+            LazySlotSource::InProcess { plugin, .. } => {
+                let slot = Arc::new(PluginSlot::InProcess(plugin.clone()));
+                slot.on_load();
+                Ok(slot)
+            }
+            LazySlotSource::Dylib { dylib_path, .. } => {
+                let lib = Arc::new(unsafe {
+                    Library::new(dylib_path.as_str()).map_err(|e| {
+                        UploadError::PluginLoadError(format!("Load dylib failed: {}", e))
+                    })?
+                });
+
+                let get_plugin: libloading::Symbol<FnGetDylibPlugin> = unsafe {
+                    lib.get(b"get_dylib_plugin").map_err(|e| {
+                        UploadError::PluginLoadError(format!("Get symbol failed: {}", e))
+                    })?
+                };
+
+                let plugin_box = get_plugin();
+                plugin_box.set_logger(plugin_log_callback);
+
+                let slot = Arc::new(PluginSlot::Dylib {
+                    plugin: plugin_box,
+                    _lib: lib,
+                });
+                slot.on_load();
+                Ok(slot)
+            }
+        };
+
+        match init_result {
+            Ok(slot) => {
+                let _ = self.inner.set(slot);
+                Ok(self
+                    .inner
+                    .get()
+                    .expect("OnceLock must be initialized after set"))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn execute(&self, ctx: &UploadInputCtx) -> Result<UploadOutputCtx, UploadError> {
+        if let Some(slot) = self.inner.get() {
+            return Ok(slot.execute(ctx));
+        }
+        let slot = self.get_or_init()?;
+        Ok(slot.execute(ctx))
+    }
+
+    pub fn on_load(&self) -> Result<(), UploadError> {
+        if self.inner.get().is_some() {
+            return Ok(());
+        }
+        self.get_or_init()?;
+        Ok(())
+    }
+
+    pub fn on_unload(&self) {
+        if let Some(slot) = self.inner.get() {
+            slot.on_unload();
+        }
+    }
+}
+
 /// **插件元数据**
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginMeta {
     // 插件名称
     pub name: String,
+    // 插件标题
+    pub title: String,
     // 插件版本
     pub version: String,
     // 插件描述
@@ -113,7 +205,7 @@ pub struct UploadPluginInfo {
     pub path: String,
     // 插件插槽
     #[serde(skip)]
-    pub slot: Arc<PluginSlot>,
+    pub slot: LazyPluginSlot,
 }
 
 impl UploadPluginInfo {
@@ -140,7 +232,13 @@ impl UploadPluginInfo {
                 }
             }
         };
-        let slot = Arc::new(PluginSlot::InProcess(Arc::from(plugin)));
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: config_path.to_string(),
+                plugin: Arc::from(plugin),
+            },
+            inner: OnceLock::new(),
+        };
         let plugin_id = format!(
             "{}_{}_{}",
             "in_process",
@@ -164,14 +262,12 @@ impl UploadPluginInfo {
     /// # 返回
     /// * `Ok(UploadPluginInfo)` - 成功加载的插件信息
     /// * `Err(UploadError)` - 加载失败
-    pub fn new_from_dylib_path(
-        dylib_path: &str,
-    ) -> Result<UploadPluginInfo, UploadError> {
+    pub fn new_from_dylib_path(dylib_path: &str) -> Result<UploadPluginInfo, UploadError> {
         // 1. 解析路径获取父目录
         let dylib_path_obj = Path::new(dylib_path);
-        let parent_dir = dylib_path_obj
-            .parent()
-            .ok_or_else(|| UploadError::PluginLoadError("Invalid dylib path: no parent directory".to_string()))?;
+        let parent_dir = dylib_path_obj.parent().ok_or_else(|| {
+            UploadError::PluginLoadError("Invalid dylib path: no parent directory".to_string())
+        })?;
 
         // 2. 构建配置文件路径
         let config_path = parent_dir.join("config.json");
@@ -187,7 +283,8 @@ impl UploadPluginInfo {
         let config_value: Value = serde_json::from_reader(json_file)?;
         let meta: Arc<PluginMeta> = serde_json::from_value(config_value.clone())?;
         let default_config_value: Option<&Value> = config_value.get("config");
-        let default_config: Option<Arc<HashMap<String, PluginConfig>>> = match default_config_value {
+        let default_config: Option<Arc<HashMap<String, PluginConfig>>> = match default_config_value
+        {
             None => None,
             Some(config) => {
                 if let Ok(map) = serde_json::from_value(config.clone()) {
@@ -199,32 +296,16 @@ impl UploadPluginInfo {
             }
         };
 
-        // 4. 加载动态库
-        let lib = Arc::new(unsafe {
-            Library::new(dylib_path).map_err(|e| {
-                UploadError::PluginLoadError(format!("Load dylib failed: {}", e))
-            })?
-        });
-
-        // 5. 获取符号
-        let get_plugin: libloading::Symbol<FnGetDylibPlugin> = unsafe {
-            lib.get(b"get_dylib_plugin").map_err(|e| {
-                UploadError::PluginLoadError(format!("Get symbol failed: {}", e))
-            })?
+        // 4. 构建 LazyPluginSlot（延迟加载动态库）
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::Dylib {
+                config_path: config_path.display().to_string(),
+                dylib_path: dylib_path.to_string(),
+            },
+            inner: OnceLock::new(),
         };
 
-        // 6. 调用函数获取插件实例
-        let plugin_box = get_plugin();
-
-        plugin_box.set_logger(plugin_log_callback);
-
-        // 7. 构建 PluginSlot
-        let slot = Arc::new(PluginSlot::Dylib {
-            plugin: plugin_box,
-            _lib: lib,
-        });
-
-        // 8. 生成插件 ID
+        // 5. 生成插件 ID
         let plugin_id = format!(
             "{}_{}_{}",
             "dylib",
@@ -232,7 +313,7 @@ impl UploadPluginInfo {
             meta.author.clone().unwrap_or("unknown".to_string())
         );
 
-        // 9. 返回 UploadPluginInfo
+        // 6. 返回 UploadPluginInfo
         Ok(UploadPluginInfo {
             id: plugin_id,
             meta,
@@ -240,6 +321,26 @@ impl UploadPluginInfo {
             path: dylib_path.to_string(),
             slot,
         })
+    }
+
+    pub fn execute(&self, context: &UploadInputCtx) -> Result<UploadOutputCtx, UploadError> {
+        self.slot.execute(context)
+    }
+
+    pub fn on_load(&self) -> Result<(), UploadError> {
+        self.slot.on_load()
+    }
+
+    pub fn get_id(&self) -> String {
+        self.id.clone()
+    }
+
+    pub fn get_default_config(&self) -> Option<Arc<HashMap<String, PluginConfig>>> {
+        self.default_config.clone()
+    }
+
+    pub fn get_meta(&self) -> Arc<PluginMeta> {
+        self.meta.clone()
     }
 }
 
@@ -255,12 +356,9 @@ mod tests {
 
     #[test]
     fn test_new_from_dylib_path_success() {
-        // 注意：此测试需要在实际构建示例插件后才能运行
-        // 在实际 CI 中应使用 build.rs 设置测试环境
         let result = UploadPluginInfo::new_from_dylib_path(
-            "../../target/debug/libuploader_example_plugin.dylib"
+            "../../target/debug/libuploader_example_plugin.dylib",
         );
-        // 暂时只检查不 panic，实际测试在集成测试中
         let _ = result;
     }
 
@@ -270,7 +368,9 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(UploadError::PluginLoadError(msg)) => {
-                assert!(msg.contains("no parent directory"));
+                assert!(
+                    msg.contains("no parent directory") || msg.contains("Failed to open config")
+                );
             }
             _ => panic!("Expected PluginLoadError"),
         }

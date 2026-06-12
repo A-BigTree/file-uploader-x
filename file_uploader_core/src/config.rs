@@ -2,8 +2,8 @@ use std::fmt;
 use std::io;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::fmt::{
-    format::{FormatEvent, FormatFields, Writer},
     FmtContext,
+    format::{FormatEvent, FormatFields, Writer},
 };
 use tracing_subscriber::registry::LookupSpan;
 
@@ -34,9 +34,9 @@ where
 
 pub fn init_logging() -> io::Result<()> {
     use tracing_log::LogTracer;
+    use tracing_subscriber::EnvFilter;
     use tracing_subscriber::fmt;
     use tracing_subscriber::prelude::*;
-    use tracing_subscriber::EnvFilter;
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
 

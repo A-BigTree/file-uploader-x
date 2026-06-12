@@ -1,5 +1,6 @@
 {
   "name": "uploader_test_example_plugin",
+  "title": "动态加载测试插件",
   "description": "动态加载测试插件",
   "version": "0.0.1",
   "author": "A-BigTree",
