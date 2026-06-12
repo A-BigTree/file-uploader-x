@@ -94,6 +94,71 @@ pub struct LazyPluginSlot {
     inner: OnceLock<Arc<PluginSlot>>,
 }
 
+impl LazyPluginSlot {
+    pub(crate) fn get_or_init(&self) -> Result<&Arc<PluginSlot>, UploadError> {
+        let init_result: Result<Arc<PluginSlot>, UploadError> = match &self.source {
+            LazySlotSource::InProcess { plugin, .. } => {
+                let slot = Arc::new(PluginSlot::InProcess(plugin.clone()));
+                slot.on_load();
+                Ok(slot)
+            }
+            LazySlotSource::Dylib { dylib_path, .. } => {
+                let lib = Arc::new(unsafe {
+                    Library::new(dylib_path.as_str()).map_err(|e| {
+                        UploadError::PluginLoadError(format!("Load dylib failed: {}", e))
+                    })?
+                });
+
+                let get_plugin: libloading::Symbol<FnGetDylibPlugin> = unsafe {
+                    lib.get(b"get_dylib_plugin").map_err(|e| {
+                        UploadError::PluginLoadError(format!("Get symbol failed: {}", e))
+                    })?
+                };
+
+                let plugin_box = get_plugin();
+                plugin_box.set_logger(plugin_log_callback);
+
+                let slot = Arc::new(PluginSlot::Dylib {
+                    plugin: plugin_box,
+                    _lib: lib,
+                });
+                slot.on_load();
+                Ok(slot)
+            }
+        };
+
+        match init_result {
+            Ok(slot) => {
+                let _ = self.inner.set(slot);
+                Ok(self.inner.get().unwrap())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn execute(&self, ctx: &UploadInputCtx) -> Result<UploadOutputCtx, UploadError> {
+        if let Some(slot) = self.inner.get() {
+            return Ok(slot.execute(ctx));
+        }
+        let slot = self.get_or_init()?;
+        Ok(slot.execute(ctx))
+    }
+
+    pub fn on_load(&self) -> Result<(), UploadError> {
+        if self.inner.get().is_some() {
+            return Ok(());
+        }
+        self.get_or_init()?;
+        Ok(())
+    }
+
+    pub fn on_unload(&self) {
+        if let Some(slot) = self.inner.get() {
+            slot.on_unload();
+        }
+    }
+}
+
 /// **插件元数据**
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginMeta {
