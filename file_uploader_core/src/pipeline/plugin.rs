@@ -130,7 +130,10 @@ impl LazyPluginSlot {
         match init_result {
             Ok(slot) => {
                 let _ = self.inner.set(slot);
-                Ok(self.inner.get().unwrap())
+                Ok(self
+                    .inner
+                    .get()
+                    .expect("OnceLock must be initialized after set"))
             }
             Err(e) => Err(e),
         }

@@ -506,7 +506,7 @@ mod tests {
         assert_eq!(plugin1.get_load_count(), 0);
         assert_eq!(plugin2.get_load_count(), 0);
 
-        table.preload_all().unwrap();
+        table.preload_all().expect("preload should succeed");
 
         assert_eq!(plugin1.get_load_count(), 1);
         assert_eq!(plugin2.get_load_count(), 1);
