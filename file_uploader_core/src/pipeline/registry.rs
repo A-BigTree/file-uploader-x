@@ -1,4 +1,5 @@
 use crate::pipeline::plugin::UploadPluginInfo;
+use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
 use serde_json::Value;
@@ -38,12 +39,12 @@ impl PluginRegistryInfo {
         }
     }
 
-    pub fn execute(&self, context: &UploadInputCtx) -> UploadOutputCtx {
+    pub fn execute(&self, context: &UploadInputCtx) -> Result<UploadOutputCtx, UploadError> {
         self.plugin_instance.execute(context)
     }
 
-    pub fn on_load(&self) {
-        self.plugin_instance.on_load();
+    pub fn on_load(&self) -> Result<(), UploadError> {
+        self.plugin_instance.on_load()
     }
 
     pub fn on_unload(&self) {
@@ -114,9 +115,6 @@ pub struct UploadPluginRegistryTable {
 impl UploadPluginRegistryTable {
     pub fn new(id: String, mut plugins: Vec<PluginRegistryInfo>) -> Self {
         plugins.sort();
-        for plugin in &plugins {
-            plugin.on_load();
-        }
         UploadPluginRegistryTable { id, plugins }
     }
 
@@ -146,12 +144,25 @@ impl UploadPluginRegistryTable {
             })
             .collect()
     }
+
+    pub fn preload_all(&self) -> Result<(), Vec<UploadError>> {
+        let errors: Vec<UploadError> = self.plugins
+            .iter()
+            .filter_map(|p| p.plugin_instance.slot.get_or_init().err())
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::plugin::{PluginMeta, PluginSlot};
+    use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginMeta};
+    use std::sync::OnceLock;
 
     struct MockPlugin;
 
@@ -180,8 +191,14 @@ mod tests {
             phase,
         });
 
-        let plugin = Box::new(MockPlugin);
-        let slot = Arc::new(PluginSlot::InProcess(std::sync::Arc::new(*plugin) as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>));
+        let plugin = std::sync::Arc::new(MockPlugin) as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: "/test/path".to_string(),
+                plugin,
+            },
+            inner: OnceLock::new(),
+        };
 
         Arc::new(UploadPluginInfo {
             id: format!("test_{}", name),
@@ -443,12 +460,20 @@ mod tests {
         let plugin1 = std::sync::Arc::new(MockPluginWithLoadCounter::new());
         let plugin2 = std::sync::Arc::new(MockPluginWithLoadCounter::new());
 
-        let slot1 = Arc::new(PluginSlot::InProcess(
-            plugin1.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
-        ));
-        let slot2 = Arc::new(PluginSlot::InProcess(
-            plugin2.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
-        ));
+        let slot1 = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: "/test/path".to_string(),
+                plugin: plugin1.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+            },
+            inner: OnceLock::new(),
+        };
+        let slot2 = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: "/test/path".to_string(),
+                plugin: plugin2.clone() as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+            },
+            inner: OnceLock::new(),
+        };
 
         let plugin_info1 = Arc::new(UploadPluginInfo {
             id: "test_plugin_1".to_string(),
@@ -483,7 +508,12 @@ mod tests {
         assert_eq!(plugin1.get_load_count(), 0);
         assert_eq!(plugin2.get_load_count(), 0);
 
-        UploadPluginRegistryTable::new("test_registry".to_string(), vec![p1, p2]);
+        let table = UploadPluginRegistryTable::new("test_registry".to_string(), vec![p1, p2]);
+
+        assert_eq!(plugin1.get_load_count(), 0);
+        assert_eq!(plugin2.get_load_count(), 0);
+
+        table.preload_all().unwrap();
 
         assert_eq!(plugin1.get_load_count(), 1);
         assert_eq!(plugin2.get_load_count(), 1);

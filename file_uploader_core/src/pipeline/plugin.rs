@@ -78,7 +78,7 @@ impl Drop for PluginSlot {
     }
 }
 
-enum LazySlotSource {
+pub(crate) enum LazySlotSource {
     InProcess {
         config_path: String,
         plugin: Arc<dyn UploadPlugin>,
@@ -90,8 +90,8 @@ enum LazySlotSource {
 }
 
 pub struct LazyPluginSlot {
-    source: LazySlotSource,
-    inner: OnceLock<Arc<PluginSlot>>,
+    pub(crate) source: LazySlotSource,
+    pub(crate) inner: OnceLock<Arc<PluginSlot>>,
 }
 
 impl LazyPluginSlot {
