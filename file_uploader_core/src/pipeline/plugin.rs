@@ -202,7 +202,7 @@ pub struct UploadPluginInfo {
     pub path: String,
     // 插件插槽
     #[serde(skip)]
-    pub slot: Arc<PluginSlot>,
+    pub slot: LazyPluginSlot,
 }
 
 impl UploadPluginInfo {
@@ -229,7 +229,13 @@ impl UploadPluginInfo {
                 }
             }
         };
-        let slot = Arc::new(PluginSlot::InProcess(Arc::from(plugin)));
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                config_path: config_path.to_string(),
+                plugin: Arc::from(plugin),
+            },
+            inner: OnceLock::new(),
+        };
         let plugin_id = format!(
             "{}_{}_{}",
             "in_process",
@@ -288,32 +294,16 @@ impl UploadPluginInfo {
             }
         };
 
-        // 4. 加载动态库
-        let lib = Arc::new(unsafe {
-            Library::new(dylib_path).map_err(|e| {
-                UploadError::PluginLoadError(format!("Load dylib failed: {}", e))
-            })?
-        });
-
-        // 5. 获取符号
-        let get_plugin: libloading::Symbol<FnGetDylibPlugin> = unsafe {
-            lib.get(b"get_dylib_plugin").map_err(|e| {
-                UploadError::PluginLoadError(format!("Get symbol failed: {}", e))
-            })?
+        // 4. 构建 LazyPluginSlot（延迟加载动态库）
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::Dylib {
+                config_path: config_path.display().to_string(),
+                dylib_path: dylib_path.to_string(),
+            },
+            inner: OnceLock::new(),
         };
 
-        // 6. 调用函数获取插件实例
-        let plugin_box = get_plugin();
-
-        plugin_box.set_logger(plugin_log_callback);
-
-        // 7. 构建 PluginSlot
-        let slot = Arc::new(PluginSlot::Dylib {
-            plugin: plugin_box,
-            _lib: lib,
-        });
-
-        // 8. 生成插件 ID
+        // 5. 生成插件 ID
         let plugin_id = format!(
             "{}_{}_{}",
             "dylib",
@@ -321,7 +311,7 @@ impl UploadPluginInfo {
             meta.author.clone().unwrap_or("unknown".to_string())
         );
 
-        // 9. 返回 UploadPluginInfo
+        // 6. 返回 UploadPluginInfo
         Ok(UploadPluginInfo {
             id: plugin_id,
             meta,
@@ -331,12 +321,12 @@ impl UploadPluginInfo {
         })
     }
     
-    pub fn execute(&self,  context: &UploadInputCtx) -> UploadOutputCtx {
+    pub fn execute(&self, context: &UploadInputCtx) -> Result<UploadOutputCtx, UploadError> {
         self.slot.execute(context)
     }
     
-    pub fn on_load(&self) {
-        self.slot.on_load();
+    pub fn on_load(&self) -> Result<(), UploadError> {
+        self.slot.on_load()
     }
     
     pub fn get_id(&self) -> String {
