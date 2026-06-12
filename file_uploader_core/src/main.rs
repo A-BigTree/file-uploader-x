@@ -1,6 +1,7 @@
 mod config;
 mod pipeline;
 
+use std::sync::Arc;
 use config::init_logging;
 use tracing::{error, info};
 use file_uploader_core::pipeline::plugin::UploadPluginInfo;
@@ -17,7 +18,7 @@ fn main() {
 
     let ctx = UploadInputCtx {
         file_list: vec![],
-        config_info: None,
+        config_info: Arc::new(None),
         extra_info: None,
         related_process_info: None
     };

@@ -176,7 +176,7 @@ pub struct UploadInputCtx {
     // 文件数据
     pub file_list: Vec<Arc<UploadFileData>>,
     // 配置信息
-    pub config_info: Option<Value>,
+    pub config_info: Arc<Option<Value>>,
     // 扩展信息
     pub extra_info: Option<HashMap<String, String>>,
     // 关联流程

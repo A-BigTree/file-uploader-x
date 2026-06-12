@@ -1,7 +1,7 @@
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::{PluginLogLevel, UploadConfigType, UploadPhase};
-use file_uploader_sdk::models::interface::{FnGetDylibPlugin, PluginLogCallback, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
+use file_uploader_sdk::models::interface::{FnGetDylibPlugin, UploadDylibPlugin, UploadDylibPluginDyn, UploadPlugin};
 use file_uploader_sdk::utils::ctx_util::{convert_input_ctx_s, convert_output_ctx};
 use libloading::Library;
 use serde::{Deserialize, Serialize};
@@ -72,11 +72,19 @@ impl PluginSlot {
     }
 }
 
+impl Drop for PluginSlot {
+    fn drop(&mut self) {
+        self.on_unload();
+    }
+}
+
 /// **插件元数据**
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginMeta {
     // 插件名称
     pub name: String,
+    // 插件标题
+    pub title: String,
     // 插件版本
     pub version: String,
     // 插件描述
@@ -240,6 +248,26 @@ impl UploadPluginInfo {
             path: dylib_path.to_string(),
             slot,
         })
+    }
+    
+    pub fn execute(&self,  context: &UploadInputCtx) -> UploadOutputCtx {
+        self.slot.execute(context)
+    }
+    
+    pub fn on_load(&self) {
+        self.slot.on_load();
+    }
+    
+    pub fn get_id(&self) -> String {
+        self.id.clone()
+    }
+    
+    pub fn get_default_config(&self) -> Option<Arc<HashMap<String, PluginConfig>>> {
+        self.default_config.clone()
+    }
+    
+    pub fn get_meta(&self) -> Arc<PluginMeta> {
+        self.meta.clone()
     }
 }
 
