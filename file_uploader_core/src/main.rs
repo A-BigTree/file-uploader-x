@@ -32,7 +32,13 @@ fn main() {
         return;
     };
     info!("Plugin loaded: {}", plugin.id);
-    let result = plugin.slot.execute(&ctx);
+    let result = match plugin.slot.execute(&ctx) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Plugin execute error: {:?}", e);
+            return;
+        }
+    };
     info!("Plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
 
     info!("=== Testing DYLIB plugin WITH logger ===");
@@ -43,6 +49,12 @@ fn main() {
         return;
     };
     info!("Dylib plugin loaded: {}", dylib_plugin.id);
-    let result = dylib_plugin.slot.execute(&ctx);
+    let result = match dylib_plugin.slot.execute(&ctx) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Dylib plugin execute error: {:?}", e);
+            return;
+        }
+    };
     info!("Dylib plugin execute result: {:?}", serde_json::to_string(&result).unwrap_or("plugin error".to_string()));
 }
