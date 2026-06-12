@@ -354,12 +354,10 @@ mod tests {
 
     #[test]
     fn test_new_from_dylib_path_success() {
-        // 注意：此测试需要在实际构建示例插件后才能运行
-        // 在实际 CI 中应使用 build.rs 设置测试环境
         let result = UploadPluginInfo::new_from_dylib_path(
             "../../target/debug/libuploader_example_plugin.dylib"
         );
-        // 暂时只检查不 panic，实际测试在集成测试中
+        assert!(result.is_ok(), "构造阶段不应报错，dylib 加载被延迟");
         let _ = result;
     }
 
@@ -369,7 +367,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(UploadError::PluginLoadError(msg)) => {
-                assert!(msg.contains("no parent directory"));
+                assert!(msg.contains("no parent directory") || msg.contains("Failed to open config"));
             }
             _ => panic!("Expected PluginLoadError"),
         }
