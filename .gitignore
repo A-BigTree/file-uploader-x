@@ -20,3 +20,7 @@ target/
 **/temp_uploader.log
 
 **/target/
+
+# AGENTS
+.agents/
+skills-lock.json
