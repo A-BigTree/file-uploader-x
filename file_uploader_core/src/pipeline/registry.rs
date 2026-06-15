@@ -205,7 +205,9 @@ impl UploadPluginRegistryTable {
             }
 
             if let Some(cb) = &callback {
+                let now_ms = chrono::Local::now().timestamp_millis();
                 let event = PipelineEvent {
+                    timestamp_ms: now_ms,
                     kind: PipelineEventKind::PhaseStart,
                     phase: phase.clone(),
                     plugin_id: None,
@@ -224,7 +226,9 @@ impl UploadPluginRegistryTable {
                 };
 
                 if let Some(cb) = &callback {
+                    let now_ms = chrono::Local::now().timestamp_millis();
                     let event = PipelineEvent {
+                        timestamp_ms: now_ms,
                         kind: PipelineEventKind::PluginStart,
                         phase: phase.clone(),
                         plugin_id: Some(&plugin.plugin_instance.id),
@@ -242,7 +246,9 @@ impl UploadPluginRegistryTable {
                             extra_info: None,
                         };
                         if let Some(cb) = &callback {
+                            let now_ms = chrono::Local::now().timestamp_millis();
                             let event = PipelineEvent {
+                                timestamp_ms: now_ms,
                                 kind: PipelineEventKind::PluginEnd,
                                 phase: phase.clone(),
                                 plugin_id: Some(&plugin.plugin_instance.id),
@@ -254,7 +260,9 @@ impl UploadPluginRegistryTable {
                 };
 
                 if let Some(cb) = &callback {
+                    let now_ms = chrono::Local::now().timestamp_millis();
                     let event = PipelineEvent {
+                        timestamp_ms: now_ms,
                         kind: PipelineEventKind::PluginEnd,
                         phase: phase.clone(),
                         plugin_id: Some(&plugin.plugin_instance.id),
@@ -274,7 +282,9 @@ impl UploadPluginRegistryTable {
             }
 
             if let Some(cb) = &callback {
+                let now_ms = chrono::Local::now().timestamp_millis();
                 let event = PipelineEvent {
+                    timestamp_ms: now_ms,
                     kind: PipelineEventKind::PhaseEnd,
                     phase: phase.clone(),
                     plugin_id: None,
@@ -653,6 +663,7 @@ mod tests {
     }
 
     struct CallbackRecord {
+        pub timestamp_ms: i64,
         pub kind: PipelineEventKind,
         pub phase: UploadPhase,
         pub plugin_id: Option<String>,
@@ -678,6 +689,7 @@ mod tests {
             _result: Option<&UploadOutputCtx>,
         ) {
             self.records.lock().unwrap().push(CallbackRecord {
+                timestamp_ms: event.timestamp_ms,
                 kind: event.kind.clone(),
                 phase: event.phase.clone(),
                 plugin_id: event.plugin_id.map(|s| s.to_string()),
@@ -801,6 +813,9 @@ mod tests {
         assert!(matches!(records[3].kind, PipelineEventKind::PhaseEnd));
         assert_eq!(records[1].plugin_id.as_deref(), Some("test_p1"));
         assert!(matches!(records[0].phase, UploadPhase::PreUpload));
+        for r in records.iter() {
+            assert!(r.timestamp_ms > 0, "timestamp_ms should be positive");
+        }
     }
 
     #[test]

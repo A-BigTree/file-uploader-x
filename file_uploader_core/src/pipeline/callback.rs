@@ -10,6 +10,8 @@ pub enum PipelineEventKind {
 }
 
 pub struct PipelineEvent<'a> {
+    /// 回调触发瞬间的毫秒时间戳（当地系统时间，i64 epoch 毫秒）
+    pub timestamp_ms: i64,
     pub kind: PipelineEventKind,
     pub phase: UploadPhase,
     pub plugin_id: Option<&'a str>,
