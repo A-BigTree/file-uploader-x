@@ -18,7 +18,7 @@ file-uploader-x/
 ├── file_uploader_sdk/          # SDK crate - 插件接口 trait、数据模型、ABI 转换、日志宏
 │   └── src/
 │       ├── models/
-│       │   ├── interface.rs    # UploadPlugin / UploadDylibPlugin / PipelineCallback
+│   │   ├── interface.rs    # UploadPlugin / UploadDylibPlugin
 │       │   ├── ctx.rs          # 原生上下文结构体（UploadTaskCtx 等）
 │       │   ├── ctx_stabby.rs   # stabby ABI 兼容结构体（*S 后缀）
 │       │   └── enums.rs        # UploadPhase 及各状态枚举
@@ -28,8 +28,9 @@ file-uploader-x/
 ├── file_uploader_core/         # 核心引擎 - Pipeline 执行、插件管理
 │   └── src/
 │       ├── pipeline/
-│       │   ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginConfig
-│       │   └── registry.rs     # PluginRegistryInfo / UploadPluginRegistryTable / execute_pipeline
+│   │       ├── callback.rs     # PipelineCallback / PipelineEvent / PipelineEventKind
+│   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginConfig
+│   │       └── registry.rs     # PluginRegistryInfo / UploadPluginRegistryTable / execute_pipeline
 │       ├── config.rs           # 日志配置（UploaderLoggingFormatter、init_logging）
 │       └── main.rs            # 示例入口（测试 in-process + dylib 插件加载）
 ├── file_uploader_plugins/      # 内置进程内插件库
@@ -78,9 +79,9 @@ cargo test
 
 ### Pipeline 事件回调
 
-- **`PipelineCallback` trait**: 监听执行过程中的事件（`on_event` 方法）
+- **`PipelineCallback` trait**: 监听执行过程中的事件（`on_event` 方法），定义在 `file_uploader_core/src/pipeline/callback.rs`
 - **事件类型 (`PipelineEventKind`)**: `PhaseStart` / `PhaseEnd` / `PluginStart` / `PluginEnd`
-- **`PipelineEvent`**: 包含事件类型、阶段、插件 ID（阶段级事件为 `None`）
+- **`PipelineEvent`**: 包含回调时间毫秒时间戳（`timestamp_ms`）、事件类型、阶段、插件 ID、插件元信息（阶段级事件 ID 与元信息为 `None`）
 
 ### 上传阶段 (UploadPhase)
 

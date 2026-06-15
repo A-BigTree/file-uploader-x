@@ -18,7 +18,7 @@ file-uploader-x/
 ├── file_uploader_sdk/          # SDK - 插件接口 trait、数据模型、ABI 转换、日志宏
 │   └── src/
 │       ├── models/
-│   │       ├── interface.rs    # UploadPlugin / UploadDylibPlugin / PipelineCallback
+│   │       ├── interface.rs    # UploadPlugin / UploadDylibPlugin
 │   │       ├── ctx.rs          # 原生上下文结构体
 │   │       ├── ctx_stabby.rs   # stabby ABI 兼容结构体（*S 后缀）
 │   │       └── enums.rs        # UploadPhase 及各状态枚举
@@ -28,6 +28,7 @@ file-uploader-x/
 ├── file_uploader_core/         # 核心引擎 - Pipeline 执行、插件管理
 │   └── src/
 │       ├── pipeline/
+│   │       ├── callback.rs     # PipelineCallback / PipelineEvent / PipelineEventKind
 │   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta
 │   │       └── registry.rs     # UploadPluginRegistryTable / execute_pipeline
 │       ├── config.rs           # 日志格式与初始化
@@ -101,6 +102,8 @@ UploadTaskCtx → UploadProcessCtx → UploadInputCtx → [插件处理] → Upl
 ### Pipeline 事件回调
 
 实现 `PipelineCallback` trait 可监听执行过程中的事件：
+
+`PipelineEvent` 包含回调时间毫秒时间戳（`timestamp_ms`）、事件类型、阶段、插件 ID 与插件元信息（`plugin_meta`，阶段级事件为 `None`）。
 
 | 事件 | 触发时机 |
 |------|---------|
