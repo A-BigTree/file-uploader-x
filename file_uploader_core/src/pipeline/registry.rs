@@ -2,7 +2,7 @@ use crate::pipeline::plugin::UploadPluginInfo;
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
-use file_uploader_sdk::models::interface::{PipelineCallback, PipelineEvent, PipelineEventKind};
+use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -301,9 +301,7 @@ impl UploadPluginRegistryTable {
 mod tests {
     use super::*;
     use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginMeta};
-    use file_uploader_sdk::models::interface::{
-        PipelineCallback, PipelineEvent, PipelineEventKind,
-    };
+    use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
     use std::sync::Mutex;
     use std::sync::OnceLock;
 
