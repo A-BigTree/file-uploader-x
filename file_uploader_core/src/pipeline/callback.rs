@@ -1,3 +1,4 @@
+use crate::pipeline::plugin::PluginMeta;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
 
@@ -15,6 +16,8 @@ pub struct PipelineEvent<'a> {
     pub kind: PipelineEventKind,
     pub phase: UploadPhase,
     pub plugin_id: Option<&'a str>,
+    /// 插件元信息：插件级事件填充对应插件；阶段级事件为 None
+    pub plugin_meta: Option<&'a PluginMeta>,
 }
 
 pub trait PipelineCallback: Send + Sync {

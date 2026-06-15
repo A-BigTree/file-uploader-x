@@ -211,6 +211,7 @@ impl UploadPluginRegistryTable {
                     kind: PipelineEventKind::PhaseStart,
                     phase: phase.clone(),
                     plugin_id: None,
+                    plugin_meta: None,
                 };
                 cb.on_event(&event, &current_ctx, None);
             }
@@ -232,6 +233,7 @@ impl UploadPluginRegistryTable {
                         kind: PipelineEventKind::PluginStart,
                         phase: phase.clone(),
                         plugin_id: Some(&plugin.plugin_instance.id),
+                        plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
                     };
                     cb.on_event(&event, &plugin_input, None);
                 }
@@ -252,6 +254,7 @@ impl UploadPluginRegistryTable {
                                 kind: PipelineEventKind::PluginEnd,
                                 phase: phase.clone(),
                                 plugin_id: Some(&plugin.plugin_instance.id),
+                                plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
                             };
                             cb.on_event(&event, &plugin_input, Some(&fail_ctx));
                         }
@@ -266,6 +269,7 @@ impl UploadPluginRegistryTable {
                         kind: PipelineEventKind::PluginEnd,
                         phase: phase.clone(),
                         plugin_id: Some(&plugin.plugin_instance.id),
+                        plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
                     };
                     cb.on_event(&event, &plugin_input, Some(&output));
                 }
@@ -288,6 +292,7 @@ impl UploadPluginRegistryTable {
                     kind: PipelineEventKind::PhaseEnd,
                     phase: phase.clone(),
                     plugin_id: None,
+                    plugin_meta: None,
                 };
                 cb.on_event(&event, &current_ctx, phase_last_output.as_ref());
             }
@@ -667,6 +672,7 @@ mod tests {
         pub kind: PipelineEventKind,
         pub phase: UploadPhase,
         pub plugin_id: Option<String>,
+        pub plugin_meta_name: Option<String>,
     }
 
     struct TestCallback {
@@ -693,6 +699,7 @@ mod tests {
                 kind: event.kind.clone(),
                 phase: event.phase.clone(),
                 plugin_id: event.plugin_id.map(|s| s.to_string()),
+                plugin_meta_name: event.plugin_meta.map(|m| m.name.clone()),
             });
         }
     }
@@ -816,6 +823,16 @@ mod tests {
         for r in records.iter() {
             assert!(r.timestamp_ms > 0, "timestamp_ms should be positive");
         }
+        // 阶段级事件无插件元信息
+        assert!(matches!(records[0].kind, PipelineEventKind::PhaseStart));
+        assert!(records[0].plugin_meta_name.is_none());
+        assert!(matches!(records[3].kind, PipelineEventKind::PhaseEnd));
+        assert!(records[3].plugin_meta_name.is_none());
+        // 插件级事件携带插件元信息
+        assert!(matches!(records[1].kind, PipelineEventKind::PluginStart));
+        assert_eq!(records[1].plugin_meta_name.as_deref(), Some("p1"));
+        assert!(matches!(records[2].kind, PipelineEventKind::PluginEnd));
+        assert_eq!(records[2].plugin_meta_name.as_deref(), Some("p1"));
     }
 
     #[test]
@@ -870,6 +887,12 @@ mod tests {
             .filter(|r| matches!(r.kind, PipelineEventKind::PluginEnd))
             .collect();
         assert_eq!(plugin_ends.len(), 2);
+        // 失败分支的 PluginEnd 仍携带失败插件(p2)的元信息
+        assert_eq!(
+            plugin_ends[1].plugin_meta_name.as_deref(),
+            Some("p2"),
+            "failed plugin PluginEnd should carry its plugin_meta"
+        );
     }
 
     #[test]
