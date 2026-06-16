@@ -1,12 +1,14 @@
 use crate::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use crate::models::ctx_stabby::{UploadInputCtxS, UploadOutputCtxS};
-use crate::models::enums::PluginLogLevel;
+use crate::models::enums::{PluginLogLevel, UploadPhase};
 use stabby::string::String as SString;
 
 /// **Plugin in process**
 pub trait UploadPlugin: Send + Sync + 'static {
     /// Plugin name in process
     fn name(&self) -> &'static str;
+    /// Plugin phase
+    fn phase(&self) -> UploadPhase;
     /// Execute the plugin
     fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx;
     /// Called when the plugin is loaded

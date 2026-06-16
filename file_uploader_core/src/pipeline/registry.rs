@@ -327,6 +327,10 @@ mod tests {
             "mock_plugin"
         }
 
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
+        }
+
         fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
             UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Success,
@@ -589,6 +593,10 @@ mod tests {
                 "mock_plugin_with_counter"
             }
 
+            fn phase(&self) -> UploadPhase {
+                UploadPhase::Upload
+            }
+
             fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
                 UploadOutputCtx {
                     result: file_uploader_sdk::models::enums::OutputResultType::Success,
@@ -711,6 +719,10 @@ mod tests {
             "fail_plugin"
         }
 
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
+        }
+
         fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
             UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Failed,
@@ -763,6 +775,10 @@ mod tests {
     impl file_uploader_sdk::models::interface::UploadPlugin for ConfigReadPlugin {
         fn name(&self) -> &'static str {
             "config_read_plugin"
+        }
+
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
         }
 
         fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {

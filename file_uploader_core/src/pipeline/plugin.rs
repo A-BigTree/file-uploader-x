@@ -289,7 +289,10 @@ impl PluginResource {
             Err(_) => Arc::new(PluginConfigInfo::default()),
         };
 
-        Ok(PluginResource { meta: Arc::new(meta), config })
+        Ok(PluginResource {
+            meta: Arc::new(meta),
+            config,
+        })
     }
 }
 
@@ -322,7 +325,10 @@ impl UploadPluginInfo {
             },
             inner: OnceLock::new(),
         };
-        let id = format!("in_process_{:?}_{}", resource.meta.phase, resource.meta.name);
+        let id = format!(
+            "in_process_{:?}_{}",
+            resource.meta.phase, resource.meta.name
+        );
         Ok(UploadPluginInfo {
             id,
             meta: resource.meta,
@@ -475,7 +481,10 @@ mod tests {
     fn test_plugin_form_spec_serde_default_omitted() {
         let json = r#"{ "type": "text" }"#;
         let form: super::PluginFormSpec = serde_json::from_str(json).unwrap();
-        assert!(matches!(form, super::PluginFormSpec::Text { secret: false }));
+        assert!(matches!(
+            form,
+            super::PluginFormSpec::Text { secret: false }
+        ));
 
         let json2 = r#"{ "type": "select" }"#;
         let form2: super::PluginFormSpec = serde_json::from_str(json2).unwrap();
