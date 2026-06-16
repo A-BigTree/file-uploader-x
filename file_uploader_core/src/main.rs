@@ -23,10 +23,17 @@ fn main() {
         related_process_info: None,
     };
 
+    let target_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("target/debug");
+
     info!("=== Testing IN-PROCESS plugin ===");
-    let Ok(plugin) =
-        UploadPluginInfo::new_in_process("./resources/pre/file_type_filter", Box::new(FileTypeFilter))
-    else {
+    let in_process_dir = target_dir.join("resources/pre/file_type_filter");
+    let Ok(plugin) = UploadPluginInfo::new_in_process(
+        in_process_dir.to_str().unwrap(),
+        Box::new(FileTypeFilter),
+    ) else {
         error!("Plugin load error");
         return;
     };
@@ -44,8 +51,8 @@ fn main() {
     );
 
     info!("=== Testing DYLIB plugin WITH logger ===");
-    let Ok(dylib_plugin) =
-        UploadPluginInfo::new_from_dylib_path("./libuploader_example_plugin.dylib")
+    let dylib_path = target_dir.join("libuploader_example_plugin.dylib");
+    let Ok(dylib_plugin) = UploadPluginInfo::new_from_dylib_path(dylib_path.to_str().unwrap())
     else {
         error!("Dylib plugin load error");
         return;

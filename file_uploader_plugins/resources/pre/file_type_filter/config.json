@@ -1,28 +1,28 @@
 {
-  "access":{
-
-  },
-  "params":[
+  "access": {},
+  "params": [
     {
       "key": "pass_type",
-      "config_type": "Custom",
       "title": "允许通过的文件类型",
       "description": "为空表示全部允许，支持匹配占位符",
+      "config_type": "Custom",
       "default_value": [],
-      "value_type": "",
-      "value_config": {
-
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true
       }
     },
     {
       "key": "reject_type",
-      "config_type": "Custom",
       "title": "拦截的文件类型",
       "description": "为空表示全部允许通过，支持匹配占位符",
+      "config_type": "Custom",
       "default_value": [],
-      "value_type": "",
-      "value_config": {
-
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true
       }
     }
   ]
