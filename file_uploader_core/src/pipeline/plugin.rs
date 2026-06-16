@@ -178,25 +178,51 @@ pub struct PluginMeta {
     pub phase: UploadPhase,
 }
 
+/// **权限粒度**（开关或白名单，纯透传不做执行逻辑）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum AccessSpec {
+    /// 全开(true) / 全关(false)
+    Flag(bool),
+    /// 白名单：仅允许列出的项（fs 为路径，network 为 host）
+    Allowlist(Vec<String>),
+}
+
+impl Default for AccessSpec {
+    fn default() -> Self {
+        Self::Flag(false)
+    }
+}
+
+/// **插件权限配置**（对应 config.json 的 access 字段，纯透传）
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct PluginAccessConfig {
+    #[serde(default)]
+    pub fs_read: AccessSpec,
+    #[serde(default)]
+    pub fs_write: AccessSpec,
+    #[serde(default)]
+    pub network: AccessSpec,
+    /// 预留扩展点（未来新增权限项）
+    #[serde(default)]
+    pub extra: Value,
+}
+
 /// **插件配置文件容器**（对应 config.json）
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginConfigInfo {
-    /// 访问控制（reserved，纯透传）
-    #[serde(default = "empty_object")]
-    pub access: Value,
+    /// 权限配置
+    #[serde(default)]
+    pub access: PluginAccessConfig,
     /// 配置项列表
     #[serde(default)]
     pub params: Vec<PluginConfigItem>,
 }
 
-fn empty_object() -> Value {
-    serde_json::json!({})
-}
-
 impl Default for PluginConfigInfo {
     fn default() -> Self {
         Self {
-            access: empty_object(),
+            access: PluginAccessConfig::default(),
             params: Vec::new(),
         }
     }
@@ -463,7 +489,22 @@ mod tests {
     fn test_plugin_config_info_default_empty() {
         let d = super::PluginConfigInfo::default();
         assert!(d.params.is_empty());
-        assert!(d.access.is_object());
+        assert!(matches!(d.access.fs_read, super::AccessSpec::Flag(false)));
+        assert!(matches!(d.access.fs_write, super::AccessSpec::Flag(false)));
+        assert!(matches!(d.access.network, super::AccessSpec::Flag(false)));
+    }
+
+    #[test]
+    fn test_plugin_access_config_deserialize() {
+        let json = r#"{
+            "fs_read": ["/tmp/a", "/data/b"],
+            "fs_write": true,
+            "network": false
+        }"#;
+        let acc: super::PluginAccessConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(acc.fs_read, super::AccessSpec::Allowlist(p) if p.len() == 2));
+        assert!(matches!(acc.fs_write, super::AccessSpec::Flag(true)));
+        assert!(matches!(acc.network, super::AccessSpec::Flag(false)));
     }
 
     fn target_dir() -> std::path::PathBuf {

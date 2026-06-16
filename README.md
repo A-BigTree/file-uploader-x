@@ -165,7 +165,7 @@ impl UploadPlugin for MyPlugin {
 
 ```json
 {
-  "access": {},
+  "access": { "fs_read": ["/tmp/uploads"], "fs_write": false, "network": false },
   "params": [
     {
       "key": "option_key",

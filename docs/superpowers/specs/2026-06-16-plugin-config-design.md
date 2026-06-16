@@ -56,12 +56,33 @@
 
 ```rust
 pub struct PluginConfigInfo {
-    pub access: serde_json::Value,       // reserved，当前空对象，纯透传
+    pub access: PluginAccessConfig,      // 权限配置，纯透传
     pub params: Vec<PluginConfigItem>,
 }
 ```
 
-> `PluginConfigInfo` 实现 `Default`（`access = {}`、`params = []`），用于 `config.json` 缺失时的兜底空容器。
+> `PluginConfigInfo` 实现 `Default`（`access = PluginAccessConfig::default()`、`params = []`），用于 `config.json` 缺失时的兜底空容器。
+
+#### 4.2.1 权限配置 `PluginAccessConfig` / `AccessSpec`
+
+```rust
+// 权限粒度：开关 或 白名单
+#[serde(untagged)]
+pub enum AccessSpec {
+    Flag(bool),              // true=全开 / false=全关
+    Allowlist(Vec<String>),  // 白名单（fs=路径，network=host）
+}
+// 默认 Deny：Flag(false)
+
+pub struct PluginAccessConfig {
+    pub fs_read: AccessSpec,
+    pub fs_write: AccessSpec,
+    pub network: AccessSpec,
+    pub extra: serde_json::Value,  // 预留扩展点
+}
+```
+
+权限点缺省 = `Flag(false)`（Deny）。纯透传，不做执行/校验逻辑。
 
 ### 4.3 单个配置项 —— `PluginConfigItem`（原 `PluginConfig` 升级，旧类型退役）
 
@@ -110,7 +131,7 @@ pub struct PluginValueOption {
 
 ```json
 {
-  "access": {},
+  "access": { "fs_read": ["/tmp/uploads"], "fs_write": false, "network": false },
   "params": [
     {
       "key": "pass_type",

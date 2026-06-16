@@ -72,7 +72,8 @@ cargo test
 - **插件插槽 (`PluginSlot`)**: 统一封装两种插件来源，对外提供一致的 `execute`/`on_load`/`on_unload` 接口；实现 `Drop` 时自动调用 `on_unload`
 - **延迟插槽 (`LazyPluginSlot`)**: 基于 `OnceLock` 实现延迟初始化——插件仅在首次 `execute` 或 `on_load` 时才真正加载。支持 `preload_all` 预加载全部插件
 - **插件元数据 (`PluginMeta`)**: 名称（`name`）、标题（`title`）、版本（`version`）、描述（`description`）、作者（`author`）、执行阶段（`phase: UploadPhase`）
-- **插件配置文件 (`PluginConfigInfo`)**: 对应 `config.json`，含 `access`（reserved）与 `params: Vec<PluginConfigItem>`
+- **插件配置文件 (`PluginConfigInfo`)**: 对应 `config.json`，含 `access: PluginAccessConfig`（权限配置）与 `params: Vec<PluginConfigItem>`
+- **插件权限配置 (`PluginAccessConfig`)**: `fs_read` / `fs_write` / `network` 三权限点 + `extra` 预留；每项为 `AccessSpec`（`Flag(bool)` 开关 或 `Allowlist(Vec<String>)` 白名单，如限定可读写的目录/host），默认 Deny。纯透传，不做执行逻辑
 - **插件配置项 (`PluginConfigItem`)**: `key` / `title` / `description` / `config_type` / `default_value` / `form`，其中 `form: PluginFormSpec` 为表单控件描述（`Text{secret}` / `Select{options,multiple,allow_custom}`），采用 serde internally tagged enum（tag = `type`）
 - **插件资源 (`PluginResource`)**: 公共加载器，`load(dir)` 读取目录下 `meta.json`（必读）+ `config.json`（选读，缺失→空容器），消除两类插件加载重复
 - **插件信息 (`UploadPluginInfo`)**: 封装插件 ID、元数据、配置（`Arc<PluginConfigInfo>`）、加载路径、`LazyPluginSlot`；`new_in_process(resource_dir, plugin)` 与 `new_from_dylib_path(dylib_path)` 共用 `PluginResource::load`。ID 生成：进程内 `in_process_{phase}_{name}`；dylib 读取同目录 `plugin.id`
@@ -119,7 +120,7 @@ cargo test
 
 ```json
 {
-  "access": {},
+  "access": { "fs_read": ["/tmp/uploads"], "fs_write": false, "network": false },
   "params": [
     {
       "key": "pass_type", "title": "允许类型", "description": "...",

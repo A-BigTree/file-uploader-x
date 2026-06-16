@@ -1,5 +1,9 @@
 {
-  "access": {},
+  "access": {
+    "fs_read": ["/tmp/uploads", "/data/in"],
+    "fs_write": false,
+    "network": false
+  },
   "params": [
     {
       "key": "pass_type",
