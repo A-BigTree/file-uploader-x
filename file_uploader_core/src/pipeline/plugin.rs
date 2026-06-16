@@ -179,6 +179,66 @@ pub struct PluginMeta {
     pub phase: UploadPhase,
 }
 
+/// **插件配置文件容器**（对应 config.json）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PluginConfigInfo {
+    /// 访问控制（reserved，纯透传）
+    #[serde(default = "empty_object")]
+    pub access: Value,
+    /// 配置项列表
+    #[serde(default)]
+    pub params: Vec<PluginConfigItem>,
+}
+
+fn empty_object() -> Value {
+    serde_json::json!({})
+}
+
+impl Default for PluginConfigInfo {
+    fn default() -> Self {
+        Self {
+            access: empty_object(),
+            params: Vec::new(),
+        }
+    }
+}
+
+/// **单个配置项**
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PluginConfigItem {
+    pub key: String,
+    pub title: String,
+    pub description: String,
+    pub config_type: UploadConfigType,
+    pub default_value: Value,
+    pub form: PluginFormSpec,
+}
+
+/// **表单控件描述**（value_type + value_config 合并表达）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum PluginFormSpec {
+    Text {
+        #[serde(default)]
+        secret: bool,
+    },
+    Select {
+        #[serde(default)]
+        options: Vec<PluginValueOption>,
+        #[serde(default)]
+        multiple: bool,
+        #[serde(default)]
+        allow_custom: bool,
+    },
+}
+
+/// **候选项**
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PluginValueOption {
+    pub label: String,
+    pub value: Value,
+}
+
 /// **插件配置**
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PluginConfig {
@@ -374,5 +434,66 @@ mod tests {
             }
             _ => panic!("Expected PluginLoadError"),
         }
+    }
+
+    #[test]
+    fn test_plugin_config_info_select_text_deserialize() {
+        let json = r#"{
+            "access": {},
+            "params": [
+                {
+                    "key": "pass_type",
+                    "title": "允许类型",
+                    "description": "为空全部允许",
+                    "config_type": "Custom",
+                    "default_value": [],
+                    "form": {
+                        "type": "select",
+                        "options": [{"label":"图片","value":"image"}],
+                        "multiple": true,
+                        "allow_custom": true
+                    }
+                },
+                {
+                    "key": "token",
+                    "title": "凭证",
+                    "description": "访问凭证",
+                    "config_type": "Default",
+                    "default_value": "",
+                    "form": { "type": "text", "secret": true }
+                }
+            ]
+        }"#;
+        let info: super::PluginConfigInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.params.len(), 2);
+        assert!(matches!(
+            info.params[0].form,
+            super::PluginFormSpec::Select { multiple: true, .. }
+        ));
+        assert!(matches!(
+            info.params[1].form,
+            super::PluginFormSpec::Text { secret: true }
+        ));
+    }
+
+    #[test]
+    fn test_plugin_form_spec_serde_default_omitted() {
+        let json = r#"{ "type": "text" }"#;
+        let form: super::PluginFormSpec = serde_json::from_str(json).unwrap();
+        assert!(matches!(form, super::PluginFormSpec::Text { secret: false }));
+
+        let json2 = r#"{ "type": "select" }"#;
+        let form2: super::PluginFormSpec = serde_json::from_str(json2).unwrap();
+        assert!(matches!(
+            form2,
+            super::PluginFormSpec::Select { options, multiple: false, allow_custom: false } if options.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_plugin_config_info_default_empty() {
+        let d = super::PluginConfigInfo::default();
+        assert!(d.params.is_empty());
+        assert!(d.access.is_object());
     }
 }
