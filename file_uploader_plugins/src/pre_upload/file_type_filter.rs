@@ -96,6 +96,14 @@ impl UploadPlugin for FileTypeFilter {
             extra_info: None,
         }
     }
+
+    fn on_load(&self) {
+        info!("file_type_filter: loading");
+    }
+
+    fn on_unload(&self) {
+        info!("file_type_filter: unloading");
+    }
 }
 
 #[cfg(test)]
@@ -184,5 +192,12 @@ mod tests {
         let out = run(files, Some(cfg));
         assert!(matches!(out.result, OutputResultType::Success));
         assert_eq!(out.file_list.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn on_load_and_unload_do_not_panic() {
+        let plugin = FileTypeFilter;
+        plugin.on_load();
+        plugin.on_unload();
     }
 }

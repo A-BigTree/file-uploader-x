@@ -55,7 +55,9 @@ description: Use when creating, implementing, or refactoring an in-process plugi
 - `form`：`{ "type": "text", "secret": bool }` 或 `{ "type": "select", "options": [{label,value}], "multiple": bool, "allow_custom": bool }`（字段均可省略，走 serde default）
 - `access`：`fs_read`/`fs_write`/`network`，每项 `true`/`false` 或 `["路径/host"]` 白名单；默认 Deny；**纯透传不做执行逻辑**
 
-### 2. Rust 实现（三个必须方法：name / phase / execute）
+### 2. Rust 实现
+
+必须方法：`name` / `phase` / `execute`；生命周期钩子：`on_load` / `on_unload`（trait 有默认空实现，建议显式 log 标记加载/卸载）。
 
 ```rust
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
@@ -72,10 +74,13 @@ impl UploadPlugin for SizeLimiter {
         // 处理 ctx.file_list，返回 UploadOutputCtx
         todo!()
     }
+
+    fn on_load(&self) { tracing::info!("size_limiter: loading"); }
+    fn on_unload(&self) { tracing::info!("size_limiter: unloading"); }
 }
 ```
 
-> **易遗漏**：`phase()` 是必须方法，漏了会编译报 `missing phase in implementation`。
+> **易遗漏**：`phase()` 是必须方法，漏了会编译报 `missing phase in implementation`。`on_load`/`on_unload` 虽有默认空实现，但建议显式实现（至少 log），便于观测插件生命周期。
 
 ### 3. 配置读取约定
 
@@ -132,7 +137,7 @@ let out = table.execute_pipeline(input_ctx, None);
 
 - [ ] `meta.json` 含 name/title/version/description/author/phase
 - [ ] `config.json`：access 三权限点 + params（每项含 `form`）
-- [ ] `impl UploadPlugin` 三方法（name/phase/execute）
+- [ ] `impl UploadPlugin`：name/phase/execute + on_load/on_unload（log）
 - [ ] `src/<phase_dir>.rs` 注册 `pub mod <name>;`
 - [ ] 单元测试覆盖（含 config_info 为 None）
 - [ ] `new_in_process` 路径指向 `target/resources/<phase>/<name>`
