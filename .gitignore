@@ -20,3 +20,10 @@ target/
 **/temp_uploader.log
 
 **/target/
+
+# AGENTS
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/designing-in-process-plugins/
+skills-lock.json

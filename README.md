@@ -9,7 +9,7 @@
 - **Pipeline 执行引擎** — 按阶段（`Input → PreUpload → Upload → PostUpload → Output`）和优先级排序执行插件链
 - **延迟加载** — 插件在首次 `execute` 时才初始化（`LazyPluginSlot`），支持 `preload_all` 预加载
 - **事件回调** — 通过 `PipelineCallback` 监听阶段/插件的开始与结束事件
-- **插件配置** — 每个 JSON 配置文件定义插件元数据与可配置项
+- **插件配置** — 每个插件一个资源目录（`meta.json` + `config.json`），表单驱动 schema（`form` 控件类型：`text` / `select`）
 
 ## 项目结构
 
@@ -18,7 +18,7 @@ file-uploader-x/
 ├── file_uploader_sdk/          # SDK - 插件接口 trait、数据模型、ABI 转换、日志宏
 │   └── src/
 │       ├── models/
-│   │       ├── interface.rs    # UploadPlugin / UploadDylibPlugin / PipelineCallback
+│   │       ├── interface.rs    # UploadPlugin / UploadDylibPlugin
 │   │       ├── ctx.rs          # 原生上下文结构体
 │   │       ├── ctx_stabby.rs   # stabby ABI 兼容结构体（*S 后缀）
 │   │       └── enums.rs        # UploadPhase 及各状态枚举
@@ -28,16 +28,19 @@ file-uploader-x/
 ├── file_uploader_core/         # 核心引擎 - Pipeline 执行、插件管理
 │   └── src/
 │       ├── pipeline/
-│   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta
+│   │       ├── callback.rs     # PipelineCallback / PipelineEvent / PipelineEventKind
+│   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginConfigInfo / PluginFormSpec
 │   │       └── registry.rs     # UploadPluginRegistryTable / execute_pipeline
 │       ├── config.rs           # 日志格式与初始化
 │       └── main.rs            # 示例入口
 ├── file_uploader_plugins/      # 内置进程内插件库
-│   └── src/
-│       ├── pre_upload/         # PreUpload 阶段插件（file_type_filter）
-│       ├── upload.rs           # Upload 阶段（待实现）
-│       └── post_upload.rs      # PostUpload 阶段（待实现）
-├── uploader_example_plugin/    # 示例动态库插件（cdylib）
+│   ├── src/
+│   │   ├── pre_upload/         # PreUpload 阶段插件（file_type_filter）
+│   │   ├── upload.rs           # Upload 阶段（待实现）
+│   │   └── post_upload.rs      # PostUpload 阶段（待实现）
+│   └── resources/              # 进程内插件资源（meta.json + config.json）
+│       └── pre/<name>/
+├── uploader_example_plugin/    # 示例动态库插件（cdylib），含 meta.json / config.json / plugin.id
 └── Cargo.toml                  # Workspace 根配置
 ```
 
@@ -102,6 +105,8 @@ UploadTaskCtx → UploadProcessCtx → UploadInputCtx → [插件处理] → Upl
 
 实现 `PipelineCallback` trait 可监听执行过程中的事件：
 
+`PipelineEvent` 包含回调时间毫秒时间戳（`timestamp_ms`）、事件类型、阶段、插件 ID 与插件元信息（`plugin_meta`，阶段级事件为 `None`）。
+
 | 事件 | 触发时机 |
 |------|---------|
 | `PhaseStart` / `PhaseEnd` | 每个阶段开始 / 结束 |
@@ -141,26 +146,36 @@ impl UploadPlugin for MyPlugin {
 }
 ```
 
-配套的 JSON 配置文件（进程内插件按插件名作为 key 嵌套）：
+配套资源放在独立目录 `resources/<phase>/<plugin_name>/`，含 `meta.json`（元数据）与 `config.json`（表单驱动配置）。
+
+`meta.json`：
 
 ```json
 {
-  "my-plugin": {
-    "name": "my-plugin",
-    "title": "我的插件",
-    "description": "插件描述",
-    "version": "0.0.1",
-    "author": "Author",
-    "phase": "PreUpload",
-    "config": {
-      "option_key": {
-        "key": "option_key",
-        "config_type": "Custom",
-        "description": "配置说明",
-        "default_value": "default"
-      }
+  "name": "my-plugin",
+  "title": "我的插件",
+  "description": "插件描述",
+  "version": "0.0.1",
+  "author": "Author",
+  "phase": "PreUpload"
+}
+```
+
+`config.json`：
+
+```json
+{
+  "access": { "fs_read": ["/tmp/uploads"], "fs_write": false, "network": false },
+  "params": [
+    {
+      "key": "option_key",
+      "title": "配置项",
+      "description": "配置说明",
+      "config_type": "Custom",
+      "default_value": "default",
+      "form": { "type": "text" }
     }
-  }
+  ]
 }
 ```
 
@@ -200,7 +215,7 @@ pub extern "C" fn get_dylib_plugin()
 }
 ```
 
-动态库插件的 `Cargo.toml` 需指定 `crate-type = ["cdylib"]`，并导出 `get_dylib_plugin` 函数。
+动态库插件的 `Cargo.toml` 需指定 `crate-type = ["cdylib"]`，并导出 `get_dylib_plugin` 函数。`.dylib` 产物同目录需含 `meta.json` + `config.json` + `plugin.id`（插件唯一 ID，由插件构建 CLI 生成）。
 
 > **日志**：动态库插件必须实现 `set_logger` 方法并调用 `set_logger_callback(callback)`，否则 `plugin_*!` 宏输出的日志将被忽略。
 
@@ -213,7 +228,7 @@ use file_uploader_core::pipeline::registry::{
 };
 
 // 1. 加载插件（进程内或动态库）
-let plugin = UploadPluginInfo::new_in_process("config.json", Box::new(MyPlugin))?;
+let plugin = UploadPluginInfo::new_in_process("./resources/pre/my-plugin", Box::new(MyPlugin))?;
 let dylib_plugin = UploadPluginInfo::new_from_dylib_path("./libmy_plugin.dylib")?;
 
 // 2. 注册到 Registry Table

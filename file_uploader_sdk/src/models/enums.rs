@@ -78,7 +78,7 @@ pub enum OutputResultType {
 }
 
 /// 上传组件配置类型
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[stabby::stabby]
 #[repr(u8)]
 pub enum UploadConfigType {

@@ -1,0 +1,8 @@
+{
+  "name": "file_type_filter",
+  "title": "文件类型过滤器",
+  "description": "文件类型过滤器",
+  "version": "0.0.1",
+  "author": "A-BigTree",
+  "phase": "PreUpload"
+}

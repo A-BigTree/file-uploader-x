@@ -2,7 +2,7 @@ use crate::pipeline::plugin::UploadPluginInfo;
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
-use file_uploader_sdk::models::interface::{PipelineCallback, PipelineEvent, PipelineEventKind};
+use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -205,10 +205,13 @@ impl UploadPluginRegistryTable {
             }
 
             if let Some(cb) = &callback {
+                let now_ms = chrono::Local::now().timestamp_millis();
                 let event = PipelineEvent {
+                    timestamp_ms: now_ms,
                     kind: PipelineEventKind::PhaseStart,
                     phase: phase.clone(),
                     plugin_id: None,
+                    plugin_meta: None,
                 };
                 cb.on_event(&event, &current_ctx, None);
             }
@@ -224,10 +227,13 @@ impl UploadPluginRegistryTable {
                 };
 
                 if let Some(cb) = &callback {
+                    let now_ms = chrono::Local::now().timestamp_millis();
                     let event = PipelineEvent {
+                        timestamp_ms: now_ms,
                         kind: PipelineEventKind::PluginStart,
                         phase: phase.clone(),
                         plugin_id: Some(&plugin.plugin_instance.id),
+                        plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
                     };
                     cb.on_event(&event, &plugin_input, None);
                 }
@@ -242,10 +248,13 @@ impl UploadPluginRegistryTable {
                             extra_info: None,
                         };
                         if let Some(cb) = &callback {
+                            let now_ms = chrono::Local::now().timestamp_millis();
                             let event = PipelineEvent {
+                                timestamp_ms: now_ms,
                                 kind: PipelineEventKind::PluginEnd,
                                 phase: phase.clone(),
                                 plugin_id: Some(&plugin.plugin_instance.id),
+                                plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
                             };
                             cb.on_event(&event, &plugin_input, Some(&fail_ctx));
                         }
@@ -254,10 +263,13 @@ impl UploadPluginRegistryTable {
                 };
 
                 if let Some(cb) = &callback {
+                    let now_ms = chrono::Local::now().timestamp_millis();
                     let event = PipelineEvent {
+                        timestamp_ms: now_ms,
                         kind: PipelineEventKind::PluginEnd,
                         phase: phase.clone(),
                         plugin_id: Some(&plugin.plugin_instance.id),
+                        plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
                     };
                     cb.on_event(&event, &plugin_input, Some(&output));
                 }
@@ -274,10 +286,13 @@ impl UploadPluginRegistryTable {
             }
 
             if let Some(cb) = &callback {
+                let now_ms = chrono::Local::now().timestamp_millis();
                 let event = PipelineEvent {
+                    timestamp_ms: now_ms,
                     kind: PipelineEventKind::PhaseEnd,
                     phase: phase.clone(),
                     plugin_id: None,
+                    plugin_meta: None,
                 };
                 cb.on_event(&event, &current_ctx, phase_last_output.as_ref());
             }
@@ -300,10 +315,8 @@ impl UploadPluginRegistryTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginMeta};
-    use file_uploader_sdk::models::interface::{
-        PipelineCallback, PipelineEvent, PipelineEventKind,
-    };
+    use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginConfigInfo, PluginMeta};
+    use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
     use std::sync::Mutex;
     use std::sync::OnceLock;
 
@@ -312,6 +325,10 @@ mod tests {
     impl file_uploader_sdk::models::interface::UploadPlugin for MockPlugin {
         fn name(&self) -> &'static str {
             "mock_plugin"
+        }
+
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
         }
 
         fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
@@ -338,7 +355,7 @@ mod tests {
             as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin,
             },
             inner: OnceLock::new(),
@@ -347,7 +364,7 @@ mod tests {
         Arc::new(UploadPluginInfo {
             id: format!("test_{}", name),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot,
         })
@@ -576,6 +593,10 @@ mod tests {
                 "mock_plugin_with_counter"
             }
 
+            fn phase(&self) -> UploadPhase {
+                UploadPhase::Upload
+            }
+
             fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
                 UploadOutputCtx {
                     result: file_uploader_sdk::models::enums::OutputResultType::Success,
@@ -605,7 +626,7 @@ mod tests {
 
         let slot1 = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin: plugin1.clone()
                     as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
@@ -613,7 +634,7 @@ mod tests {
         };
         let slot2 = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin: plugin2.clone()
                     as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
@@ -623,7 +644,7 @@ mod tests {
         let plugin_info1 = Arc::new(UploadPluginInfo {
             id: "test_plugin_1".to_string(),
             meta: meta.clone(),
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot: slot1,
         });
@@ -631,7 +652,7 @@ mod tests {
         let plugin_info2 = Arc::new(UploadPluginInfo {
             id: "test_plugin_2".to_string(),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot: slot2,
         });
@@ -655,9 +676,11 @@ mod tests {
     }
 
     struct CallbackRecord {
+        pub timestamp_ms: i64,
         pub kind: PipelineEventKind,
         pub phase: UploadPhase,
         pub plugin_id: Option<String>,
+        pub plugin_meta_name: Option<String>,
     }
 
     struct TestCallback {
@@ -680,9 +703,11 @@ mod tests {
             _result: Option<&UploadOutputCtx>,
         ) {
             self.records.lock().unwrap().push(CallbackRecord {
+                timestamp_ms: event.timestamp_ms,
                 kind: event.kind.clone(),
                 phase: event.phase.clone(),
                 plugin_id: event.plugin_id.map(|s| s.to_string()),
+                plugin_meta_name: event.plugin_meta.map(|m| m.name.clone()),
             });
         }
     }
@@ -692,6 +717,10 @@ mod tests {
     impl file_uploader_sdk::models::interface::UploadPlugin for FailPlugin {
         fn name(&self) -> &'static str {
             "fail_plugin"
+        }
+
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
         }
 
         fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
@@ -717,7 +746,7 @@ mod tests {
             as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin,
             },
             inner: OnceLock::new(),
@@ -725,7 +754,7 @@ mod tests {
         Arc::new(UploadPluginInfo {
             id: format!("test_{}", name),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot,
         })
@@ -746,6 +775,10 @@ mod tests {
     impl file_uploader_sdk::models::interface::UploadPlugin for ConfigReadPlugin {
         fn name(&self) -> &'static str {
             "config_read_plugin"
+        }
+
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
         }
 
         fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
@@ -803,6 +836,19 @@ mod tests {
         assert!(matches!(records[3].kind, PipelineEventKind::PhaseEnd));
         assert_eq!(records[1].plugin_id.as_deref(), Some("test_p1"));
         assert!(matches!(records[0].phase, UploadPhase::PreUpload));
+        for r in records.iter() {
+            assert!(r.timestamp_ms > 0, "timestamp_ms should be positive");
+        }
+        // 阶段级事件无插件元信息
+        assert!(matches!(records[0].kind, PipelineEventKind::PhaseStart));
+        assert!(records[0].plugin_meta_name.is_none());
+        assert!(matches!(records[3].kind, PipelineEventKind::PhaseEnd));
+        assert!(records[3].plugin_meta_name.is_none());
+        // 插件级事件携带插件元信息
+        assert!(matches!(records[1].kind, PipelineEventKind::PluginStart));
+        assert_eq!(records[1].plugin_meta_name.as_deref(), Some("p1"));
+        assert!(matches!(records[2].kind, PipelineEventKind::PluginEnd));
+        assert_eq!(records[2].plugin_meta_name.as_deref(), Some("p1"));
     }
 
     #[test]
@@ -857,6 +903,12 @@ mod tests {
             .filter(|r| matches!(r.kind, PipelineEventKind::PluginEnd))
             .collect();
         assert_eq!(plugin_ends.len(), 2);
+        // 失败分支的 PluginEnd 仍携带失败插件(p2)的元信息
+        assert_eq!(
+            plugin_ends[1].plugin_meta_name.as_deref(),
+            Some("p2"),
+            "failed plugin PluginEnd should carry its plugin_meta"
+        );
     }
 
     #[test]
@@ -875,7 +927,7 @@ mod tests {
         });
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test".to_string(),
+                resource_dir: "/test".to_string(),
                 plugin: plugin as Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
             inner: OnceLock::new(),
@@ -883,7 +935,7 @@ mod tests {
         let plugin_info = Arc::new(UploadPluginInfo {
             id: "test_config_read".to_string(),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test".to_string(),
             slot,
         });

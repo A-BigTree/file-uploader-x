@@ -18,7 +18,7 @@ file-uploader-x/
 ├── file_uploader_sdk/          # SDK crate - 插件接口 trait、数据模型、ABI 转换、日志宏
 │   └── src/
 │       ├── models/
-│       │   ├── interface.rs    # UploadPlugin / UploadDylibPlugin / PipelineCallback
+│   │   ├── interface.rs    # UploadPlugin / UploadDylibPlugin
 │       │   ├── ctx.rs          # 原生上下文结构体（UploadTaskCtx 等）
 │       │   ├── ctx_stabby.rs   # stabby ABI 兼容结构体（*S 后缀）
 │       │   └── enums.rs        # UploadPhase 及各状态枚举
@@ -28,17 +28,22 @@ file-uploader-x/
 ├── file_uploader_core/         # 核心引擎 - Pipeline 执行、插件管理
 │   └── src/
 │       ├── pipeline/
-│       │   ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginConfig
-│       │   └── registry.rs     # PluginRegistryInfo / UploadPluginRegistryTable / execute_pipeline
+│   │       ├── callback.rs     # PipelineCallback / PipelineEvent / PipelineEventKind
+│   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginConfigInfo / PluginConfigItem / PluginFormSpec / PluginResource
+│   │       └── registry.rs     # PluginRegistryInfo / UploadPluginRegistryTable / execute_pipeline
 │       ├── config.rs           # 日志配置（UploaderLoggingFormatter、init_logging）
 │       └── main.rs            # 示例入口（测试 in-process + dylib 插件加载）
 ├── file_uploader_plugins/      # 内置进程内插件库
-│   └── src/
-│       ├── pre_upload/         # PreUpload 阶段（file_type_filter）
-│       ├── upload.rs           # Upload 阶段（待实现）
-│       └── post_upload.rs      # PostUpload 阶段（待实现）
+│   ├── src/
+│   │   ├── pre_upload/         # PreUpload 阶段（file_type_filter）
+│   │   ├── upload.rs           # Upload 阶段（待实现）
+│   │   └── post_upload.rs      # PostUpload 阶段（待实现）
+│   └── resources/              # 进程内插件资源（meta.json + config.json）
+│       └── pre/<name>/
 ├── uploader_example_plugin/    # 示例动态库插件（cdylib）
-├── plugin.json                 # 内置插件配置（file-type-filter）
+│   ├── meta.json               # 插件元数据
+│   ├── config.json             # 插件配置（表单驱动 schema）
+│   └── plugin.id               # 插件唯一 ID（CLI 生成）
 └── Cargo.toml                  # Workspace 根配置
 ```
 
@@ -67,8 +72,11 @@ cargo test
 - **插件插槽 (`PluginSlot`)**: 统一封装两种插件来源，对外提供一致的 `execute`/`on_load`/`on_unload` 接口；实现 `Drop` 时自动调用 `on_unload`
 - **延迟插槽 (`LazyPluginSlot`)**: 基于 `OnceLock` 实现延迟初始化——插件仅在首次 `execute` 或 `on_load` 时才真正加载。支持 `preload_all` 预加载全部插件
 - **插件元数据 (`PluginMeta`)**: 名称（`name`）、标题（`title`）、版本（`version`）、描述（`description`）、作者（`author`）、执行阶段（`phase: UploadPhase`）
-- **插件配置 (`PluginConfig`)**: 每个 plugin 对应一个 JSON 配置项，包含 `key`、`config_type`、`description`、`default_value`
-- **插件信息 (`UploadPluginInfo`)**: 封装插件 ID、元数据、默认配置、加载路径、`LazyPluginSlot`；提供 `new_in_process`（从配置+实例创建）和 `new_from_dylib_path`（从 .dylib 路径加载）两种构造方式
+- **插件配置文件 (`PluginConfigInfo`)**: 对应 `config.json`，含 `access: PluginAccessConfig`（权限配置）与 `params: Vec<PluginConfigItem>`
+- **插件权限配置 (`PluginAccessConfig`)**: `fs_read` / `fs_write` / `network` 三权限点 + `extra` 预留；每项为 `AccessSpec`（`Flag(bool)` 开关 或 `Allowlist(Vec<String>)` 白名单，如限定可读写的目录/host），默认 Deny。纯透传，不做执行逻辑
+- **插件配置项 (`PluginConfigItem`)**: `key` / `title` / `description` / `config_type` / `default_value` / `form`，其中 `form: PluginFormSpec` 为表单控件描述（`Text{secret}` / `Select{options,multiple,allow_custom}`），采用 serde internally tagged enum（tag = `type`）
+- **插件资源 (`PluginResource`)**: 公共加载器，`load(dir)` 读取目录下 `meta.json`（必读）+ `config.json`（选读，缺失→空容器），消除两类插件加载重复
+- **插件信息 (`UploadPluginInfo`)**: 封装插件 ID、元数据、配置（`Arc<PluginConfigInfo>`）、加载路径、`LazyPluginSlot`；`new_in_process(resource_dir, plugin)` 与 `new_from_dylib_path(dylib_path)` 共用 `PluginResource::load`。ID 生成：进程内 `in_process_{phase}_{name}`；dylib 读取同目录 `plugin.id`
 
 ### Pipeline 注册表与执行
 
@@ -78,9 +86,9 @@ cargo test
 
 ### Pipeline 事件回调
 
-- **`PipelineCallback` trait**: 监听执行过程中的事件（`on_event` 方法）
+- **`PipelineCallback` trait**: 监听执行过程中的事件（`on_event` 方法），定义在 `file_uploader_core/src/pipeline/callback.rs`
 - **事件类型 (`PipelineEventKind`)**: `PhaseStart` / `PhaseEnd` / `PluginStart` / `PluginEnd`
-- **`PipelineEvent`**: 包含事件类型、阶段、插件 ID（阶段级事件为 `None`）
+- **`PipelineEvent`**: 包含回调时间毫秒时间戳（`timestamp_ms`）、事件类型、阶段、插件 ID、插件元信息（阶段级事件 ID 与元信息为 `None`）
 
 ### 上传阶段 (UploadPhase)
 
@@ -103,12 +111,27 @@ cargo test
 
 ## 配置文件格式
 
-两种 JSON 配置格式：
+统一的目录化格式——每个插件一个资源目录：
 
-- **进程内插件**（如 `pre_upload_plugins.json`）: 以插件名作为顶层 key 嵌套，对应 `UploadPluginInfo::new_in_process` 按插件 `name()` 查找
-- **动态库插件**（如 `config.json`）: 单插件扁平结构，放在与 `.dylib` 同目录，对应 `UploadPluginInfo::new_from_dylib_path`
+- **进程内插件**: `file_uploader_plugins/resources/<phase>/<plugin_name>/`，含 `meta.json`（`PluginMeta`）+ `config.json`（`PluginConfigInfo`）。`<phase>` 段约定 `pre`/`upload`/`post`
+- **动态库插件**: `.dylib` 产物同目录内含 `meta.json` + `config.json` + `plugin.id`（唯一 ID，由插件构建 CLI 生成）
 
-构建时通过各 crate 的 `build.rs` 将 JSON 配置复制到 target 目录。
+`config.json` 示例（表单驱动 schema）：
+
+```json
+{
+  "access": { "fs_read": ["/tmp/uploads"], "fs_write": false, "network": false },
+  "params": [
+    {
+      "key": "pass_type", "title": "允许类型", "description": "...",
+      "config_type": "Custom", "default_value": [],
+      "form": { "type": "select", "multiple": true, "allow_custom": true }
+    }
+  ]
+}
+```
+
+构建时：进程内 `build.rs` 递归复制 `resources/` 整树到 `target/resources/`；dylib `build.rs` 复制 `meta.json` + `config.json` + `plugin.id` 三件到产物同目录。
 
 ## 代码规范
 
@@ -116,7 +139,7 @@ cargo test
 - 使用 `tracing` 进行日志记录，日志格式定义在 `file_uploader_core::config::UploaderLoggingFormatter`
 - 错误处理统一使用 `file_uploader_sdk::error::UploadError`（基于 `thiserror`）
 - 序列化/反序列化使用 `serde` + `serde_json`
-- 插件配置以 JSON 文件形式存储，构建时通过 `build.rs` 复制到 target 目录
+- 插件配置以目录化 JSON（`meta.json` + `config.json`）形式存储，构建时通过 `build.rs` 复制到 target 目录
 
 ## 关键依赖
 

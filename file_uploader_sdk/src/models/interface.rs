@@ -1,12 +1,14 @@
 use crate::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use crate::models::ctx_stabby::{UploadInputCtxS, UploadOutputCtxS};
-use crate::models::enums::PluginLogLevel;
+use crate::models::enums::{PluginLogLevel, UploadPhase};
 use stabby::string::String as SString;
 
 /// **Plugin in process**
 pub trait UploadPlugin: Send + Sync + 'static {
     /// Plugin name in process
     fn name(&self) -> &'static str;
+    /// Plugin phase
+    fn phase(&self) -> UploadPhase;
     /// Execute the plugin
     fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx;
     /// Called when the plugin is loaded
@@ -48,28 +50,3 @@ pub type FnGetDylibPlugin =
 
 /// **Plugin log callback type**
 pub type PluginLogCallback = extern "C" fn(level: PluginLogLevel, message: SString);
-
-use crate::models::enums::UploadPhase;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PipelineEventKind {
-    PhaseStart,
-    PhaseEnd,
-    PluginStart,
-    PluginEnd,
-}
-
-pub struct PipelineEvent<'a> {
-    pub kind: PipelineEventKind,
-    pub phase: UploadPhase,
-    pub plugin_id: Option<&'a str>,
-}
-
-pub trait PipelineCallback: Send + Sync {
-    fn on_event(
-        &self,
-        event: &PipelineEvent,
-        ctx: &UploadInputCtx,
-        result: Option<&UploadOutputCtx>,
-    );
-}

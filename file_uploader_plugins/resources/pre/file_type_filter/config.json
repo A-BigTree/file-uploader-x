@@ -1,14 +1,14 @@
 {
   "access": {
-    "fs_read": true,
+    "fs_read": ["/tmp/uploads", "/data/in"],
     "fs_write": false,
     "network": false
   },
   "params": [
     {
       "key": "pass_type",
-      "title": "允许上传的文件类型",
-      "description": "允许上传的文件类型（为空表示全部允许）",
+      "title": "允许通过的文件类型",
+      "description": "为空表示全部允许，支持匹配占位符",
       "config_type": "Custom",
       "default_value": [],
       "form": {
@@ -19,8 +19,8 @@
     },
     {
       "key": "reject_type",
-      "title": "不允许上传的文件类型",
-      "description": "不允许上传的文件类型（为空表示全部允许）",
+      "title": "拦截的文件类型",
+      "description": "为空表示全部允许通过，支持匹配占位符",
       "config_type": "Custom",
       "default_value": [],
       "form": {

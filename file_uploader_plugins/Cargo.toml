@@ -8,4 +8,5 @@ authors.workspace = true
 tracing = {workspace = true}
 file_uploader_sdk = {workspace = true}
 serde_json = {workspace = true}
+glob = "0.3"
 
