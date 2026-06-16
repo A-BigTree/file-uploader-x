@@ -239,6 +239,35 @@ pub struct PluginValueOption {
     pub value: Value,
 }
 
+/// **插件资源（meta + config 加载结果）**
+pub struct PluginResource {
+    pub meta: Arc<PluginMeta>,
+    pub config: Arc<PluginConfigInfo>,
+}
+
+impl PluginResource {
+    /// 从插件资源目录加载：meta.json 必读，config.json 选读（缺失→空容器）。
+    pub fn load(dir: &Path) -> Result<Self, UploadError> {
+        let meta_path = dir.join("meta.json");
+        let meta_file = File::open(&meta_path).map_err(|e| {
+            UploadError::PluginLoadError(format!(
+                "Failed to open meta file {}: {}",
+                meta_path.display(),
+                e
+            ))
+        })?;
+        let meta: PluginMeta = serde_json::from_reader(meta_file)?;
+
+        let config_path = dir.join("config.json");
+        let config = match File::open(&config_path) {
+            Ok(f) => Arc::new(serde_json::from_reader(f)?),
+            Err(_) => Arc::new(PluginConfigInfo::default()),
+        };
+
+        Ok(PluginResource { meta: Arc::new(meta), config })
+    }
+}
+
 /// **插件配置**
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PluginConfig {
@@ -495,5 +524,31 @@ mod tests {
         let d = super::PluginConfigInfo::default();
         assert!(d.params.is_empty());
         assert!(d.access.is_object());
+    }
+
+    fn target_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("target/debug")
+    }
+
+    #[test]
+    fn test_plugin_resource_load_success() {
+        let dir = target_dir().join("resources/pre/file_type_filter");
+        if !dir.exists() {
+            eprintln!("skip: {} not ready yet", dir.display());
+            return;
+        }
+        let r = super::PluginResource::load(&dir).unwrap();
+        assert_eq!(r.meta.name, "file_type_filter");
+        assert!(!r.config.params.is_empty());
+    }
+
+    #[test]
+    fn test_plugin_resource_load_missing_meta() {
+        let dir = target_dir().join("resources/__nonexistent__");
+        let r = super::PluginResource::load(&dir);
+        assert!(r.is_err());
     }
 }
