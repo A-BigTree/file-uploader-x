@@ -315,7 +315,7 @@ impl UploadPluginRegistryTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginMeta};
+    use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginConfigInfo, PluginMeta};
     use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
     use std::sync::Mutex;
     use std::sync::OnceLock;
@@ -351,7 +351,7 @@ mod tests {
             as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin,
             },
             inner: OnceLock::new(),
@@ -360,7 +360,7 @@ mod tests {
         Arc::new(UploadPluginInfo {
             id: format!("test_{}", name),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot,
         })
@@ -618,7 +618,7 @@ mod tests {
 
         let slot1 = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin: plugin1.clone()
                     as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
@@ -626,7 +626,7 @@ mod tests {
         };
         let slot2 = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin: plugin2.clone()
                     as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
@@ -636,7 +636,7 @@ mod tests {
         let plugin_info1 = Arc::new(UploadPluginInfo {
             id: "test_plugin_1".to_string(),
             meta: meta.clone(),
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot: slot1,
         });
@@ -644,7 +644,7 @@ mod tests {
         let plugin_info2 = Arc::new(UploadPluginInfo {
             id: "test_plugin_2".to_string(),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot: slot2,
         });
@@ -734,7 +734,7 @@ mod tests {
             as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test/path".to_string(),
+                resource_dir: "/test/path".to_string(),
                 plugin,
             },
             inner: OnceLock::new(),
@@ -742,7 +742,7 @@ mod tests {
         Arc::new(UploadPluginInfo {
             id: format!("test_{}", name),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             slot,
         })
@@ -911,7 +911,7 @@ mod tests {
         });
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
-                config_path: "/test".to_string(),
+                resource_dir: "/test".to_string(),
                 plugin: plugin as Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
             },
             inner: OnceLock::new(),
@@ -919,7 +919,7 @@ mod tests {
         let plugin_info = Arc::new(UploadPluginInfo {
             id: "test_config_read".to_string(),
             meta,
-            default_config: None,
+            config: Arc::new(PluginConfigInfo::default()),
             path: "/test".to_string(),
             slot,
         });
