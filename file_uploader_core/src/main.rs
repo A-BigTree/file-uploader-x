@@ -25,7 +25,7 @@ fn main() {
 
     info!("=== Testing IN-PROCESS plugin ===");
     let Ok(plugin) =
-        UploadPluginInfo::new_in_process("./pre_upload_plugins.json", Box::new(FileTypeFilter))
+        UploadPluginInfo::new_in_process("./resources/pre/file_type_filter", Box::new(FileTypeFilter))
     else {
         error!("Plugin load error");
         return;
