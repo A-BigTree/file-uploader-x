@@ -1,22 +1,29 @@
 {
-  "name": "uploader_test_example_plugin",
-  "title": "动态加载测试插件",
-  "description": "动态加载测试插件",
-  "version": "0.0.1",
-  "author": "A-BigTree",
-  "phase": "PreUpload",
-  "config": {
-    "pass_type": {
+  "access": {},
+  "params": [
+    {
       "key": "pass_type",
-      "config_type": "Custom",
+      "title": "允许上传的文件类型",
       "description": "允许上传的文件类型（为空表示全部允许）",
-      "default_value": []
-    },
-    "reject_type": {
-      "key": "reject_type",
       "config_type": "Custom",
+      "default_value": [],
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true
+      }
+    },
+    {
+      "key": "reject_type",
+      "title": "不允许上传的文件类型",
       "description": "不允许上传的文件类型（为空表示全部允许）",
-      "default_value": []
+      "config_type": "Custom",
+      "default_value": [],
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true
+      }
     }
-  }
+  ]
 }
