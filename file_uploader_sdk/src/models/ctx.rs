@@ -201,3 +201,90 @@ pub struct UploadOutputCtx {
     // 扩展信息
     pub extra_info: Option<HashMap<String, String>>,
 }
+
+impl UploadOutputCtx {
+    /// 成功（无文件产出）
+    pub fn success(msg: impl Into<String>) -> Self {
+        Self {
+            result: OutputResultType::Success,
+            message: msg.into(),
+            file_list: None,
+            extra_info: None,
+        }
+    }
+
+    /// 成功（携带处理后文件）
+    pub fn success_files(msg: impl Into<String>, files: Vec<Arc<UploadFileData>>) -> Self {
+        Self {
+            result: OutputResultType::Success,
+            message: msg.into(),
+            file_list: Some(files),
+            extra_info: None,
+        }
+    }
+
+    /// 失败（会中断 pipeline）
+    pub fn failed(msg: impl Into<String>) -> Self {
+        Self {
+            result: OutputResultType::Failed,
+            message: msg.into(),
+            file_list: None,
+            extra_info: None,
+        }
+    }
+
+    /// 中断
+    pub fn interrupt(msg: impl Into<String>) -> Self {
+        Self {
+            result: OutputResultType::Interrupt,
+            message: msg.into(),
+            file_list: None,
+            extra_info: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod output_helper_tests {
+    use super::*;
+    use crate::models::enums::OutputResultType;
+
+    #[test]
+    fn success_has_no_files() {
+        let o = UploadOutputCtx::success("ok");
+        assert!(matches!(o.result, OutputResultType::Success));
+        assert_eq!(o.message, "ok");
+        assert!(o.file_list.is_none());
+        assert!(o.extra_info.is_none());
+    }
+
+    #[test]
+    fn success_files_carries_files() {
+        let f = Arc::new(UploadFileData::new(
+            crate::models::enums::FileDataType::FilePath,
+            "/tmp/a".into(),
+            "a".into(),
+            "a".into(),
+            "image/png".into(),
+            0,
+        ));
+        let o = UploadOutputCtx::success_files("done", vec![f]);
+        assert!(matches!(o.result, OutputResultType::Success));
+        assert_eq!(o.file_list.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn failed_sets_failed_result() {
+        let o = UploadOutputCtx::failed("boom");
+        assert!(matches!(o.result, OutputResultType::Failed));
+        assert_eq!(o.message, "boom");
+        assert!(o.file_list.is_none());
+    }
+
+    #[test]
+    fn interrupt_sets_interrupt_result() {
+        let o = UploadOutputCtx::interrupt("stop");
+        assert!(matches!(o.result, OutputResultType::Interrupt));
+        assert_eq!(o.message, "stop");
+    }
+}
