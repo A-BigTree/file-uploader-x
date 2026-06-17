@@ -1,0 +1,134 @@
+use crate::error::UploadError;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static UNIQUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// 默认文件名生成器：`{timestamp_ms}_{hash}.{ext}`
+/// hash = DefaultHasher((timestamp_ms, 原子计数器)) 的十六进制。
+pub fn gen_unique_name(ext: &str) -> String {
+    let ts = chrono::Local::now().timestamp_millis();
+    let n = UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut h = DefaultHasher::new();
+    (ts, n).hash(&mut h);
+    let hash = h.finish();
+    let ext_part = if ext.is_empty() {
+        String::new()
+    } else if ext.starts_with('.') {
+        ext.to_string()
+    } else {
+        format!(".{}", ext)
+    };
+    format!("{}_{:x}{}", ts, hash, ext_part)
+}
+
+/// 创建活动目录：`base/<id>`，create_dir_all。返回完整路径供填入 ctx.work_dir。
+pub fn create_work_dir(base: &Path, id: &str) -> Result<PathBuf, UploadError> {
+    let dir = base.join(id);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// 词法规范化：处理 `.` / `..`，不依赖文件是否存在（不用 canonicalize）。
+fn lex_normalize(path: &Path) -> PathBuf {
+    let mut stack: Vec<Component<'_>> = Vec::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match stack.last() {
+                Some(Component::Normal(_)) => {
+                    stack.pop();
+                }
+                _ => {}
+            },
+            other => stack.push(other),
+        }
+    }
+    stack.iter().collect()
+}
+
+/// 沙箱校验扩展点：本期仅判「归属」（resolved 是否以 work_dir 为前缀）。
+/// 未来在此追加 config.json access 白名单与 work_dir 的交集收敛。
+fn check(work_dir: &Path, resolved: &Path) -> Result<(), UploadError> {
+    if !resolved.starts_with(work_dir) {
+        return Err(UploadError::WorkDirPathEscape {
+            work_dir: work_dir.display().to_string(),
+            path: resolved.display().to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// 沙箱核心：`join(rel)` → 词法规范化 → 校验仍以 work_dir 为前缀。
+/// `work_dir` 为空串 → `WorkDirNotSet`；越界（`..`、绝对路径）→ `WorkDirPathEscape`。
+pub fn resolve(work_dir: &str, rel: &str) -> Result<PathBuf, UploadError> {
+    if work_dir.is_empty() {
+        return Err(UploadError::WorkDirNotSet);
+    }
+    let base = lex_normalize(Path::new(work_dir));
+    let normalized = lex_normalize(&base.join(rel));
+    check(&base, &normalized)?;
+    Ok(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gen_unique_name_is_unique_and_carries_ext() {
+        let a = gen_unique_name("txt");
+        let b = gen_unique_name("txt");
+        assert_ne!(a, b);
+        assert!(a.ends_with(".txt"));
+        let none = gen_unique_name("");
+        assert!(!none.ends_with('.'), "no trailing dot when ext empty");
+        let with_dot = gen_unique_name(".json");
+        assert!(with_dot.ends_with(".json"));
+        assert!(!with_dot.ends_with("..json"));
+    }
+
+    #[test]
+    fn create_work_dir_creates_nested() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_cwd_{}", gen_unique_name("")));
+        let sub = create_work_dir(&tmp, "sub").unwrap();
+        assert!(sub.is_dir());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn resolve_normal_relative() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_res_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let r = resolve(tmp.to_str().unwrap(), "a/b.txt").unwrap();
+        assert_eq!(r, tmp.join("a/b.txt"));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn resolve_empty_work_dir_is_not_set() {
+        let err = resolve("", "x").unwrap_err();
+        assert!(matches!(err, UploadError::WorkDirNotSet));
+    }
+
+    #[test]
+    fn resolve_parent_dir_escape_rejected() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_esc_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let err = resolve(tmp.to_str().unwrap(), "../../etc/passwd").unwrap_err();
+        assert!(matches!(err, UploadError::WorkDirPathEscape { .. }));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn resolve_absolute_path_inside_workdir_ok() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_abs_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let inside = tmp.join("c.txt");
+        let r = resolve(tmp.to_str().unwrap(), inside.to_str().unwrap()).unwrap();
+        assert_eq!(r, inside);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+}
