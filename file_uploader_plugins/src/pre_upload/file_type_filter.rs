@@ -1,31 +1,19 @@
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::{OutputResultType, UploadPhase};
 use file_uploader_sdk::models::interface::UploadPlugin;
+use file_uploader_sdk::utils::config_util;
 use glob::Pattern;
-use serde_json::Value;
 use std::sync::Arc;
 use tracing::{info, warn};
 
 pub struct FileTypeFilter;
 
-/// 从 config_info 读出某 key 对应的字符串列表（缺失/非数组 → 空）。
-fn parse_list(v: &Value, key: &str) -> Vec<String> {
-    v.get(key)
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// 解析 pass_type / reject_type。config_info 为 None → 双空（全部允许）。
-fn parse_config(config_info: &Arc<Option<Value>>) -> (Vec<String>, Vec<String>) {
-    match config_info.as_ref() {
-        Some(v) => (parse_list(v, "pass_type"), parse_list(v, "reject_type")),
-        None => (vec![], vec![]),
-    }
+fn parse_config(config_info: &Arc<Option<serde_json::Value>>) -> (Vec<String>, Vec<String>) {
+    (
+        config_util::get_list(config_info, "pass_type"),
+        config_util::get_list(config_info, "reject_type"),
+    )
 }
 
 /// 编译 glob 模式；无效模式记 warn 并跳过。
@@ -78,23 +66,16 @@ impl UploadPlugin for FileTypeFilter {
         let passed = filtered.len();
 
         if filtered.is_empty() {
-            return UploadOutputCtx {
-                result: OutputResultType::Failed,
-                message: format!(
-                    "file_type_filter: all {} file(s) rejected (pass={:?}, reject={:?})",
-                    total, pass_raw, reject_raw
-                ),
-                file_list: None,
-                extra_info: None,
-            };
+            return UploadOutputCtx::failed(format!(
+                "file_type_filter: all {} file(s) rejected (pass={:?}, reject={:?})",
+                total, pass_raw, reject_raw
+            ));
         }
 
-        UploadOutputCtx {
-            result: OutputResultType::Success,
-            message: format!("file_type_filter: {}/{} passed", passed, total),
-            file_list: Some(filtered),
-            extra_info: None,
-        }
+        UploadOutputCtx::success_files(
+            format!("file_type_filter: {}/{} passed", passed, total),
+            filtered,
+        )
     }
 
     fn on_load(&self) {
@@ -111,6 +92,7 @@ mod tests {
     use super::*;
     use file_uploader_sdk::models::ctx::UploadFileData;
     use file_uploader_sdk::models::enums::FileDataType;
+    use serde_json::Value;
 
     fn file(name: &str, file_type: &str) -> Arc<UploadFileData> {
         Arc::new(UploadFileData::new(
