@@ -21,6 +21,7 @@ fn main() {
         config_info: Arc::new(None),
         extra_info: None,
         related_process_info: None,
+        work_dir: None,
     };
 
     let target_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

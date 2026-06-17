@@ -36,6 +36,8 @@ pub struct UploadInputCtxS {
     pub config_info: SOption<SString>,
     // 扩展信息
     pub extra_info: SOption<SString>,
+    // 活动目录
+    pub work_dir: SOption<SString>,
 }
 
 /**

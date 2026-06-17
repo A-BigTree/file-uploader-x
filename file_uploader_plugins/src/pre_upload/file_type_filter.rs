@@ -129,6 +129,7 @@ mod tests {
             config_info: Arc::new(config),
             extra_info: None,
             related_process_info: None,
+            work_dir: None,
         };
         FileTypeFilter.execute(&ctx)
     }

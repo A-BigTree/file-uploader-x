@@ -185,6 +185,10 @@ pub struct UploadInputCtx {
     // 关联流程
     #[serde(skip)]
     pub related_process_info: Option<Weak<UploadProcessCtx>>,
+    // 活动目录：本次执行流程的唯一工作目录（流程级常量，宿主预创建并透传）。
+    // None 表示未设置。#[serde(default)] 兼容旧 JSON。
+    #[serde(default)]
+    pub work_dir: Option<String>,
 }
 
 /**
