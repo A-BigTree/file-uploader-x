@@ -102,6 +102,49 @@ pub fn write_with_gen(
     Ok((name, path))
 }
 
+use std::io::BufReader;
+
+/// 打开 work_dir 内文件，返回 `BufReader<File>`（流式，调用方自行读取）。
+pub fn open_read(
+    work_dir: &str,
+    filename: &str,
+) -> Result<BufReader<std::fs::File>, UploadError> {
+    let path = resolve(work_dir, filename)?;
+    let f = std::fs::File::open(&path)?;
+    Ok(BufReader::new(f))
+}
+
+/// 便捷：把 work_dir 内文件一次性读为 `Vec<u8>`（基于 `open_read`）。
+pub fn read_to_end(work_dir: &str, filename: &str) -> Result<Vec<u8>, UploadError> {
+    let mut r = open_read(work_dir, filename)?;
+    let mut buf = Vec::new();
+    r.read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
+/// 便捷：把 work_dir 内文件一次性读为 `String`（基于 `open_read`）。
+pub fn read_to_string(work_dir: &str, filename: &str) -> Result<String, UploadError> {
+    let mut r = open_read(work_dir, filename)?;
+    let mut s = String::new();
+    r.read_to_string(&mut s)?;
+    Ok(s)
+}
+
+/// work_dir 内某相对路径是否存在。
+pub fn exists(work_dir: &str, rel: &str) -> bool {
+    match resolve(work_dir, rel) {
+        Ok(p) => p.exists(),
+        Err(_) => false,
+    }
+}
+
+/// 在 work_dir 内创建子目录（含前缀校验）。
+pub fn create_dir(work_dir: &str, rel: &str) -> Result<(), UploadError> {
+    let path = resolve(work_dir, rel)?;
+    std::fs::create_dir_all(&path)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +235,49 @@ mod tests {
     fn write_with_empty_work_dir_is_not_set() {
         let err = write("", "txt", &b"x"[..]).unwrap_err();
         assert!(matches!(err, UploadError::WorkDirNotSet));
+    }
+
+    #[test]
+    fn open_read_returns_stream() {
+        use std::io::Read;
+        let tmp = std::env::temp_dir().join(format!("fxutil_or_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (name, _) = write(tmp.to_str().unwrap(), "txt", &b"stream-me"[..]).unwrap();
+        let mut r = open_read(tmp.to_str().unwrap(), &name).unwrap();
+        let mut buf = String::new();
+        r.read_to_string(&mut buf).unwrap();
+        assert_eq!(buf, "stream-me");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn read_to_end_and_read_to_string_roundtrip() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_rte_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (name, _) = write(tmp.to_str().unwrap(), "txt", &b"abc"[..]).unwrap();
+        let v = read_to_end(tmp.to_str().unwrap(), &name).unwrap();
+        assert_eq!(v, b"abc");
+        let s = read_to_string(tmp.to_str().unwrap(), &name).unwrap();
+        assert_eq!(s, "abc");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn exists_and_create_dir() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_ex_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        assert!(!exists(tmp.to_str().unwrap(), "sub"));
+        create_dir(tmp.to_str().unwrap(), "sub").unwrap();
+        assert!(exists(tmp.to_str().unwrap(), "sub"));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn read_functions_reject_escape() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_rej_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let err = read_to_end(tmp.to_str().unwrap(), "../../etc/passwd").unwrap_err();
+        assert!(matches!(err, UploadError::WorkDirPathEscape { .. }));
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
