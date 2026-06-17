@@ -73,6 +73,35 @@ pub fn resolve(work_dir: &str, rel: &str) -> Result<PathBuf, UploadError> {
     Ok(normalized)
 }
 
+use std::io::Read;
+
+/// 写文件（默认生成器）：从任意 `Read` 流式拷贝（`io::copy` 分块）到 work_dir 内唯一名文件。
+/// 返回 `(文件名, 完整路径)`。`work_dir` 为空 → `WorkDirNotSet`。
+pub fn write(
+    work_dir: &str,
+    ext: &str,
+    reader: impl Read,
+) -> Result<(String, PathBuf), UploadError> {
+    write_with_gen(work_dir, ext, reader, gen_unique_name)
+}
+
+/// 写文件（自定义生成器 `gen_fn`）：同上，但文件名由 `gen_fn` 决定（预留扩展点）。
+pub fn write_with_gen(
+    work_dir: &str,
+    ext: &str,
+    mut reader: impl Read,
+    gen_fn: fn(&str) -> String,
+) -> Result<(String, PathBuf), UploadError> {
+    let name = gen_fn(ext);
+    let path = resolve(work_dir, &name)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = std::fs::File::create(&path)?;
+    std::io::copy(&mut reader, &mut file)?;
+    Ok((name, path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +159,38 @@ mod tests {
         let r = resolve(tmp.to_str().unwrap(), inside.to_str().unwrap()).unwrap();
         assert_eq!(r, inside);
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn write_uses_unique_name_and_streams_content() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_w_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let data = b"hello-bytes";
+        let (name, path) = write(tmp.to_str().unwrap(), "bin", &data[..]).unwrap();
+        assert!(name.ends_with(".bin"));
+        assert!(path.starts_with(&tmp));
+        let read_back = std::fs::read(&path).unwrap();
+        assert_eq!(read_back, data);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn write_with_gen_uses_custom_generator() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_wg_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        fn my_gen(ext: &str) -> String {
+            format!("custom-{}.{}", "fixed", ext)
+        }
+        let (name, path) =
+            write_with_gen(tmp.to_str().unwrap(), "txt", &b"x"[..], my_gen).unwrap();
+        assert_eq!(name, "custom-fixed.txt");
+        assert!(path.ends_with("custom-fixed.txt"));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn write_with_empty_work_dir_is_not_set() {
+        let err = write("", "txt", &b"x"[..]).unwrap_err();
+        assert!(matches!(err, UploadError::WorkDirNotSet));
     }
 }
