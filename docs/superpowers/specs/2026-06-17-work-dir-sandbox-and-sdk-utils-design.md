@@ -208,6 +208,22 @@ fn check(work_dir: &str, resolved: &Path) -> Result<(), UploadError> {
 - 输出构造 → 改用 `UploadOutputCtx::success / failed`。
 - 测试 `run()` 构造 ctx 时补 `work_dir: None`。
 
+## 同步更新：designing-in-process-plugins skill
+
+新增能力须同步写入 `.agents/skills/designing-in-process-plugins/SKILL.md`，确保后续按该 skill 实现的插件默认采用新工具，避免继续手写样板或绕过沙箱。具体改动：
+
+| SKILL 小节 | 改动 |
+|---|---|
+| 实现步骤·配置读取约定（第 3 节） | 引导改用 `file_uploader_sdk::utils::config_util::{get_str,get_bool,get_list}`，替代手写 `serde_json::Value` 解析 |
+| 实现步骤·输出约定（第 4 节） | 引导改用 `UploadOutputCtx::{success, success_files, failed, interrupt}` 关联函数构造输出 |
+| 实现步骤（新增小节）活动目录与文件 IO | 说明 `ctx.work_dir`（流程级常量、宿主预创建并透传、`None`=未设置）；插件读写中间文件须走 `file_uploader_sdk::utils::fs_util`（`write` 强制唯一名、`write_with_gen` 自定义生成器、`open_read` 流式、`read_to_end`/`read_to_string` 便捷、`resolve`/`create_work_dir`/`exists`/`create_dir`），**禁止直接用 `std::fs`**；列出限制（dylib 直接调 libc 不可拦截、`BufReader<File>` 不跨 dylib ABI） |
+| 实现步骤·测试（第 6 节） | 构造 `UploadInputCtx` 时补 `work_dir` 字段（测试中通常 `None` 或临时目录） |
+| 范例 | 注明 `file_type_filter` 已改造为使用 `config_util` + `UploadOutputCtx` 关联函数，作为新工具用法范例 |
+| 常见错误 | 新增：`WorkDirNotSet`（`work_dir` 为 `None` 时调 `fs_util` IO）/ `WorkDirPathEscape`（`../` 或绝对路径越界）/ stabby 增字段致 dylib 须同版本重编 |
+| 快速检查清单 | 增补四项：读配置走 `config_util`；构造输出走 `UploadOutputCtx` 关联函数；读写中间文件走 `fs_util`（不直接用 `std::fs`）；测试构造 `UploadInputCtx` 补 `work_dir` |
+
+> 该 skill 改动作为实施计划中的一项独立任务，与代码改造一同提交。
+
 ## 测试策略
 
 - **`fs_util`**：`create_work_dir` 创建成功；`resolve` 正常拼接与越界（`../` 逃逸、绝对路径）→ `WorkDirPathEscape`；`write` 返回名唯一且文件落在 work_dir 内、内容与输入一致（流式往返）；`write_with_gen` 使用自定义函数命名；`open_read` / `read_to_end` / `read_to_string` 往返；`gen_unique_name` 连续调用唯一性；`exists` / `create_dir`。
