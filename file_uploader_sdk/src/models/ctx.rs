@@ -131,7 +131,7 @@ impl UploadProcessCtx {
 /**
  * 文件数据
  */
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UploadFileData {
     // 数据类型
     pub data_type: FileDataType,
@@ -141,7 +141,7 @@ pub struct UploadFileData {
     pub id: String,
     // 文件名
     pub name: String,
-    // 文件类型
+    // 文件类型（MIME，由 Input 阶段 default_input_handler 魔数嗅探填充；未嗅探时为上游原值）
     pub file_type: String,
     // 文件大小
     pub size: usize,
