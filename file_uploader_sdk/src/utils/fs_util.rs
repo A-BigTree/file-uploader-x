@@ -145,6 +145,38 @@ pub fn create_dir(work_dir: &str, rel: &str) -> Result<(), UploadError> {
     Ok(())
 }
 
+/// 把外部绝对路径文件拷贝进 work_dir 唯一名文件（受控「外部→沙箱」入口）。
+/// src_abs_path 不走 resolve 前缀校验（外部源），写入仍经 write（唯一名 + 沙箱）。
+/// work_dir 为空 → WorkDirNotSet；src 不存在 → IO 错误。
+pub fn import_file(
+    work_dir: &str,
+    src_abs_path: &str,
+    ext: &str,
+) -> Result<(String, PathBuf), UploadError> {
+    if work_dir.is_empty() {
+        return Err(UploadError::WorkDirNotSet);
+    }
+    let reader = std::fs::File::open(src_abs_path)?;
+    write(work_dir, ext, reader)
+}
+
+/// 读取外部文件前 n 字节（供魔数嗅探）。不走 work_dir 沙箱校验。
+/// 文件短于 n 字节 → 返回实际读取长度。
+pub fn read_external_head(src_abs_path: &str, n: usize) -> Result<Vec<u8>, UploadError> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(src_abs_path)?;
+    let mut buf = vec![0u8; n];
+    let read = f.read(&mut buf)?;
+    buf.truncate(read);
+    Ok(buf)
+}
+
+/// 读取 work_dir 内某文件大小（字节）。走 resolve 沙箱校验。
+pub fn file_size(work_dir: &str, filename: &str) -> Result<u64, UploadError> {
+    let path = resolve(work_dir, filename)?;
+    Ok(std::fs::metadata(path)?.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +309,72 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("fxutil_rej_{}", gen_unique_name("")));
         std::fs::create_dir_all(&tmp).unwrap();
         let err = read_to_end(tmp.to_str().unwrap(), "../../etc/passwd").unwrap_err();
+        assert!(matches!(err, UploadError::WorkDirPathEscape { .. }));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn import_file_copies_external_into_sandbox() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_imp_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let src = tmp.join("src.bin");
+        std::fs::write(&src, b"hello-external").unwrap();
+        let (name, path) =
+            import_file(tmp.to_str().unwrap(), src.to_str().unwrap(), "bin").unwrap();
+        assert!(name.ends_with(".bin"));
+        assert!(path.starts_with(&tmp));
+        assert_eq!(std::fs::read(&path).unwrap(), b"hello-external");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn import_file_missing_src_errors() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_impmiss_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let err = import_file(tmp.to_str().unwrap(), "/nonexistent/pathxyz", "bin").unwrap_err();
+        assert!(matches!(err, UploadError::CommonIoError(_)));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn import_file_empty_work_dir_is_not_set() {
+        let err = import_file("", "/tmp/x", "bin").unwrap_err();
+        assert!(matches!(err, UploadError::WorkDirNotSet));
+    }
+
+    #[test]
+    fn read_external_head_returns_prefix() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_head_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let src = tmp.join("data.dat");
+        std::fs::write(&src, b"0123456789").unwrap();
+        let head = read_external_head(src.to_str().unwrap(), 4).unwrap();
+        assert_eq!(head, b"0123");
+        let head2 = read_external_head(src.to_str().unwrap(), 100).unwrap();
+        assert_eq!(head2, b"0123456789");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn read_external_head_missing_src_errors() {
+        let err = read_external_head("/nonexistent/xyzabc", 4).unwrap_err();
+        assert!(matches!(err, UploadError::CommonIoError(_)));
+    }
+
+    #[test]
+    fn file_size_reads_sandbox_file_len() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_fs_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (name, _) = write(tmp.to_str().unwrap(), "bin", &b"abcdef"[..]).unwrap();
+        assert_eq!(file_size(tmp.to_str().unwrap(), &name).unwrap(), 6);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn file_size_rejects_escape() {
+        let tmp = std::env::temp_dir().join(format!("fxutil_fse_{}", gen_unique_name("")));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let err = file_size(tmp.to_str().unwrap(), "../../etc/passwd").unwrap_err();
         assert!(matches!(err, UploadError::WorkDirPathEscape { .. }));
         std::fs::remove_dir_all(&tmp).ok();
     }
