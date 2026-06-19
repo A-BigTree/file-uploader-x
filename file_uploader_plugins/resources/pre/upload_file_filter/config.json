@@ -1,0 +1,73 @@
+{
+  "access": {
+    "fs_read": false,
+    "fs_write": false,
+    "network": false
+  },
+  "params": [
+    {
+      "key": "pass_type",
+      "title": "允许类型",
+      "description": "允许通过的文件类型(MIME)，为空表示全部允许，支持 glob 如 image/*",
+      "config_type": "Custom",
+      "default_value": [],
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true,
+        "options": [
+          {"label": "图片(image/*)", "value": "image/*"},
+          {"label": "PNG", "value": "image/png"},
+          {"label": "JPEG", "value": "image/jpeg"},
+          {"label": "GIF", "value": "image/gif"},
+          {"label": "PDF", "value": "application/pdf"},
+          {"label": "纯文本", "value": "text/plain"},
+          {"label": "视频(video/*)", "value": "video/*"},
+          {"label": "音频(audio/*)", "value": "audio/*"},
+          {"label": "ZIP 压缩包", "value": "application/zip"},
+          {"label": "JSON", "value": "application/json"}
+        ]
+      }
+    },
+    {
+      "key": "reject_type",
+      "title": "拦截类型",
+      "description": "拦截的文件类型(MIME)，支持 glob；命中即剔除",
+      "config_type": "Custom",
+      "default_value": [],
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true,
+        "options": [
+          {"label": "图片(image/*)", "value": "image/*"},
+          {"label": "PDF", "value": "application/pdf"},
+          {"label": "视频(video/*)", "value": "video/*"},
+          {"label": "ZIP 压缩包", "value": "application/zip"}
+        ]
+      }
+    },
+    {
+      "key": "pass_name",
+      "title": "允许文件名",
+      "description": "允许通过的文件名 glob，为空表示全部允许，如 *.png、report-*",
+      "config_type": "Custom",
+      "default_value": [],
+      "form": {
+        "type": "select",
+        "multiple": true,
+        "allow_custom": true
+      }
+    },
+    {
+      "key": "max_size",
+      "title": "最大体积",
+      "description": "单文件最大体积，支持带单位如 1kb/1mb/1g；为 0 或空表示不限",
+      "config_type": "Custom",
+      "default_value": "0",
+      "form": {
+        "type": "text"
+      }
+    }
+  ]
+}
