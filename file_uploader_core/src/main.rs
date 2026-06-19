@@ -3,7 +3,8 @@ mod pipeline;
 
 use config::init_logging;
 use file_uploader_core::pipeline::plugin::UploadPluginInfo;
-use file_uploader_plugins::pre_upload::file_type_filter::FileTypeFilter;
+use file_uploader_plugins::input::default_input_handler::DefaultInputHandler;
+use file_uploader_plugins::pre_upload::upload_file_filter::UploadFileFilter;
 use file_uploader_sdk::models::ctx::UploadInputCtx;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -29,15 +30,29 @@ fn main() {
         .unwrap()
         .join("target/debug");
 
-    info!("=== Testing IN-PROCESS plugin ===");
-    let in_process_dir = target_dir.join("resources/pre/file_type_filter");
-    let Ok(plugin) = UploadPluginInfo::new_in_process(
-        in_process_dir.to_str().unwrap(),
-        Box::new(FileTypeFilter),
+    info!("=== Testing IN-PROCESS plugins ===");
+    let input_dir = target_dir.join("resources/input/default_input_handler");
+    let Ok(input_plugin) = UploadPluginInfo::new_in_process(
+        input_dir.to_str().unwrap(),
+        Box::new(DefaultInputHandler),
     ) else {
-        error!("Plugin load error");
+        error!("Input plugin load error");
         return;
     };
+    info!("Input plugin loaded: {}", input_plugin.id);
+
+    let filter_dir = target_dir.join("resources/pre/upload_file_filter");
+    let Ok(filter_plugin) = UploadPluginInfo::new_in_process(
+        filter_dir.to_str().unwrap(),
+        Box::new(UploadFileFilter),
+    ) else {
+        error!("Filter plugin load error");
+        return;
+    };
+    info!("Filter plugin loaded: {}", filter_plugin.id);
+
+    let in_process_dir = filter_dir.clone();
+    let plugin = filter_plugin;
     info!("Plugin loaded: {}", plugin.id);
     let result = match plugin.slot.execute(&ctx) {
         Ok(r) => r,
