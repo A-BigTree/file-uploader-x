@@ -35,6 +35,42 @@ pub fn get_list(config: &Arc<Option<Value>>, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 解析带单位的大小字符串为字节数（二进制 1024 进制）。
+/// 支持：纯数字（按字节）或 数字+单位；单位大小写不敏感。
+///   b/byte/bytes → 1；k/kb → 1024；m/mb → 1024²；g/gb → 1024³；t/tb → 1024⁴
+/// 非法输入 → None。
+pub fn parse_size(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let split = s.find(|c: char| c.is_ascii_alphabetic());
+    let (num_part, unit_part) = match split {
+        Some(i) => (&s[..i], &s[i..]),
+        None => (s, ""),
+    };
+    let num: u64 = num_part.parse().ok()?;
+    let mult: u64 = match unit_part.to_ascii_lowercase().as_str() {
+        "" | "b" | "byte" | "bytes" => 1,
+        "k" | "kb" => 1024,
+        "m" | "mb" => 1024 * 1024,
+        "g" | "gb" => 1024u64 * 1024 * 1024,
+        "t" | "tb" => 1024u64 * 1024 * 1024 * 1024,
+        _ => return None,
+    };
+    num.checked_mul(mult)
+}
+
+/// 读取某 key 的大小：字符串走 `parse_size`，数字走 `as_u64`。缺失/无法解析 → None。
+pub fn get_size(config: &Arc<Option<Value>>, key: &str) -> Option<u64> {
+    let v = config.as_ref().as_ref()?.get(key)?;
+    match v {
+        Value::String(s) => parse_size(s),
+        Value::Number(n) => n.as_u64(),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +141,52 @@ mod tests {
     fn get_list_not_array_returns_empty() {
         let c = cfg(r#"{"items":"x"}"#);
         assert!(get_list(&c, "items").is_empty());
+    }
+
+    #[test]
+    fn parse_size_plain_bytes() {
+        assert_eq!(super::parse_size("1024"), Some(1024));
+    }
+
+    #[test]
+    fn parse_size_units_binary() {
+        assert_eq!(super::parse_size("1kb"), Some(1024));
+        assert_eq!(super::parse_size("1mb"), Some(1024 * 1024));
+        assert_eq!(super::parse_size("1gb"), Some(1024u64 * 1024 * 1024));
+        assert_eq!(super::parse_size("1g"), Some(1024u64 * 1024 * 1024));
+        assert_eq!(super::parse_size("1tb"), Some(1024u64 * 1024 * 1024 * 1024));
+    }
+
+    #[test]
+    fn parse_size_case_insensitive_and_trimmed() {
+        assert_eq!(super::parse_size("  10MB "), Some(10 * 1024 * 1024));
+        assert_eq!(super::parse_size("2Kb"), Some(2 * 1024));
+    }
+
+    #[test]
+    fn parse_size_invalid() {
+        assert_eq!(super::parse_size(""), None);
+        assert_eq!(super::parse_size("abc"), None);
+        assert_eq!(super::parse_size("1xb"), None);
+    }
+
+    #[test]
+    fn get_size_from_string() {
+        let c = cfg(r#"{"max":"2mb"}"#);
+        assert_eq!(super::get_size(&c, "max"), Some(2 * 1024 * 1024));
+    }
+
+    #[test]
+    fn get_size_from_number() {
+        let c = cfg(r#"{"max":1048576}"#);
+        assert_eq!(super::get_size(&c, "max"), Some(1048576));
+    }
+
+    #[test]
+    fn get_size_missing_or_invalid() {
+        let none_cfg: Arc<Option<Value>> = Arc::new(None);
+        assert_eq!(super::get_size(&none_cfg, "max"), None);
+        let c = cfg(r#"{"max":"abc"}"#);
+        assert_eq!(super::get_size(&c, "max"), None);
     }
 }
