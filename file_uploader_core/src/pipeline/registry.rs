@@ -179,6 +179,7 @@ impl UploadPluginRegistryTable {
                 Some(extra_info)
             },
             related_process_info: source_ctx.related_process_info.clone(),
+            work_dir: source_ctx.work_dir.clone(),
         }
     }
 
@@ -224,6 +225,7 @@ impl UploadPluginRegistryTable {
                     config_info: Arc::new(plugin.registry_config.clone()),
                     extra_info: current_ctx.extra_info.clone(),
                     related_process_info: current_ctx.related_process_info.clone(),
+                    work_dir: current_ctx.work_dir.clone(),
                 };
 
                 if let Some(cb) = &callback {
@@ -800,6 +802,7 @@ mod tests {
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
+            work_dir: None,
         };
         let result = registry.execute_pipeline(input, None);
         assert!(matches!(
@@ -819,6 +822,7 @@ mod tests {
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
+            work_dir: None,
         };
 
         let cb = TestCallback::new();
@@ -879,6 +883,7 @@ mod tests {
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
+            work_dir: None,
         };
 
         let cb = TestCallback::new();
@@ -954,11 +959,74 @@ mod tests {
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
+            work_dir: None,
         };
 
         registry.execute_pipeline(input, None);
 
         let config = captured.lock().unwrap();
         assert_eq!(**config, Some(config_value));
+    }
+
+    #[test]
+    fn test_work_dir_propagates_to_plugin_and_across_output_to_input() {
+        struct CaptureWorkDir {
+            seen: Arc<Mutex<Option<String>>>,
+        }
+        impl file_uploader_sdk::models::interface::UploadPlugin for CaptureWorkDir {
+            fn name(&self) -> &'static str {
+                "capture_wd"
+            }
+            fn phase(&self) -> UploadPhase {
+                UploadPhase::Upload
+            }
+            fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
+                *self.seen.lock().unwrap() = ctx.work_dir.clone();
+                UploadOutputCtx {
+                    result: file_uploader_sdk::models::enums::OutputResultType::Success,
+                    message: "ok".into(),
+                    file_list: Some(ctx.file_list.clone()),
+                    extra_info: None,
+                }
+            }
+        }
+        let seen = Arc::new(Mutex::new(None));
+        let plugin = Arc::new(CaptureWorkDir {
+            seen: seen.clone(),
+        });
+        let meta = Arc::new(PluginMeta {
+            name: "capture_wd".to_string(),
+            title: "Capture".to_string(),
+            version: "1.0.0".to_string(),
+            description: "capture work_dir".to_string(),
+            author: None,
+            phase: UploadPhase::Upload,
+        });
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                resource_dir: "/test".to_string(),
+                plugin: plugin as Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>,
+            },
+            inner: OnceLock::new(),
+        };
+        let info = Arc::new(UploadPluginInfo {
+            id: "test_capture_wd".to_string(),
+            meta,
+            config: Arc::new(PluginConfigInfo::default()),
+            path: "/test".to_string(),
+            slot,
+        });
+        let reg = PluginRegistryInfo::new(info, 1, PluginRegistryStatus::Enable, None);
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+
+        let input = UploadInputCtx {
+            file_list: vec![],
+            config_info: Arc::new(None),
+            extra_info: None,
+            related_process_info: None,
+            work_dir: Some("/data/wd-flow".to_string()),
+        };
+        table.execute_pipeline(input, None);
+        assert_eq!(seen.lock().unwrap().as_deref(), Some("/data/wd-flow"));
     }
 }

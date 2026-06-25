@@ -56,6 +56,10 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
         file_list,
         config_info,
         extra_info,
+        work_dir: match &input.work_dir {
+            None => None.into(),
+            Some(s) => SOption::Some(s.clone().into()),
+        },
     }
 }
 
@@ -85,6 +89,7 @@ pub fn convert_input_ctx(input: &UploadInputCtxS) -> UploadInputCtx {
         ),
         extra_info,
         related_process_info: None,
+        work_dir: input.work_dir.match_ref(|s| Some(s.clone().into()), || None),
     }
 }
 
@@ -129,6 +134,46 @@ pub fn convert_output_ctx(input: &UploadOutputCtxS) -> UploadOutputCtx {
         message: input.message.clone().into(),
         file_list,
         extra_info,
+    }
+}
+
+#[cfg(test)]
+mod work_dir_tests {
+    use super::*;
+    use crate::models::ctx::UploadFileData;
+    use crate::models::enums::FileDataType;
+
+    fn input_with_work_dir(wd: Option<&str>) -> UploadInputCtx {
+        UploadInputCtx {
+            file_list: vec![Arc::new(UploadFileData::new(
+                FileDataType::FilePath,
+                "/tmp/a".into(),
+                "a".into(),
+                "a".into(),
+                "image/png".into(),
+                0,
+            ))],
+            config_info: Arc::new(None),
+            extra_info: None,
+            related_process_info: None,
+            work_dir: wd.map(String::from),
+        }
+    }
+
+    #[test]
+    fn roundtrip_preserves_work_dir_some() {
+        let original = input_with_work_dir(Some("/data/wd-1"));
+        let s = convert_input_ctx_s(&original);
+        let back = convert_input_ctx(&s);
+        assert_eq!(back.work_dir.as_deref(), Some("/data/wd-1"));
+    }
+
+    #[test]
+    fn roundtrip_preserves_work_dir_none() {
+        let original = input_with_work_dir(None);
+        let s = convert_input_ctx_s(&original);
+        let back = convert_input_ctx(&s);
+        assert!(back.work_dir.is_none());
     }
 }
 

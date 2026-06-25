@@ -1,0 +1,33 @@
+{
+  "access": {
+    "fs_read": true,
+    "fs_write": true,
+    "network": true
+  },
+  "params": [
+    {
+      "key": "cache_local",
+      "title": "缓存本地文件",
+      "description": "是否将本地文件拷贝一份到工作目录（true/false），默认 true",
+      "config_type": "Default",
+      "default_value": "true",
+      "form": { "type": "text" }
+    },
+    {
+      "key": "download_network",
+      "title": "下载网络文件",
+      "description": "是否默认下载网络文件到工作目录（true/false），默认 true；关闭则保留 URL 供下游自定义下载",
+      "config_type": "Default",
+      "default_value": "true",
+      "form": { "type": "text" }
+    },
+    {
+      "key": "sniff_type",
+      "title": "嗅探文件类型",
+      "description": "是否用魔数嗅探填充 file_type(MIME)（true/false），默认 true",
+      "config_type": "Default",
+      "default_value": "true",
+      "form": { "type": "text" }
+    }
+  ]
+}

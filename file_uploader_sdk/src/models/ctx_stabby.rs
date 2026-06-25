@@ -17,7 +17,7 @@ pub struct UploadFileDataS {
     pub id: SString,
     // 文件名
     pub name: SString,
-    // 文件类型
+    // 文件类型（MIME，由 Input 阶段魔数嗅探填充）
     pub file_type: SString,
     // 文件大小
     pub size: usize,
@@ -36,6 +36,8 @@ pub struct UploadInputCtxS {
     pub config_info: SOption<SString>,
     // 扩展信息
     pub extra_info: SOption<SString>,
+    // 活动目录
+    pub work_dir: SOption<SString>,
 }
 
 /**

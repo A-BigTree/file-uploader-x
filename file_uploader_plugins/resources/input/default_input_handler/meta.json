@@ -1,0 +1,8 @@
+{
+  "name": "default_input_handler",
+  "title": "默认输入处理器",
+  "description": "将外部输入引入工作目录并嗅探文件类型：本地文件可选缓存，网络文件可选下载",
+  "version": "0.0.1",
+  "author": "A-BigTree",
+  "phase": "Input"
+}
