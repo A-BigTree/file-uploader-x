@@ -31,7 +31,7 @@ pub struct UploadFileDataS {
 #[stabby::stabby]
 pub struct UploadInputCtxS {
     // 文件数据
-    pub file_list: SVec<SArc<UploadFileDataS>>,
+    pub file: SOption<SArc<UploadFileDataS>>,
     // 配置信息
     pub config_info: SOption<SString>,
     // 扩展信息
@@ -50,7 +50,7 @@ pub struct UploadOutputCtxS {
     // 输出信息
     pub message: SString,
     // 文件数据
-    pub file_list: SOption<SVec<SArc<UploadFileDataS>>>,
+    pub file: SOption<SArc<UploadFileDataS>>,
     // 扩展信息
     pub extra_info: SOption<SString>,
 }

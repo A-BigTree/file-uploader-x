@@ -177,7 +177,7 @@ impl UploadFileData {
 #[derive(Serialize, Deserialize)]
 pub struct UploadInputCtx {
     // 文件数据
-    pub file_list: Vec<Arc<UploadFileData>>,
+    pub file: Option<Arc<UploadFileData>>,
     // 配置信息
     pub config_info: Arc<Option<Value>>,
     // 扩展信息
@@ -201,7 +201,7 @@ pub struct UploadOutputCtx {
     // 输出信息
     pub message: String,
     // 文件数据
-    pub file_list: Option<Vec<Arc<UploadFileData>>>,
+    pub file: Option<Arc<UploadFileData>>,
     // 扩展信息
     pub extra_info: Option<HashMap<String, String>>,
 }
@@ -212,17 +212,17 @@ impl UploadOutputCtx {
         Self {
             result: OutputResultType::Success,
             message: msg.into(),
-            file_list: None,
+            file: None,
             extra_info: None,
         }
     }
 
     /// 成功（携带处理后文件）
-    pub fn success_files(msg: impl Into<String>, files: Vec<Arc<UploadFileData>>) -> Self {
+    pub fn success_file(msg: impl Into<String>, file: Arc<UploadFileData>) -> Self {
         Self {
             result: OutputResultType::Success,
             message: msg.into(),
-            file_list: Some(files),
+            file: Some(file),
             extra_info: None,
         }
     }
@@ -232,7 +232,7 @@ impl UploadOutputCtx {
         Self {
             result: OutputResultType::Failed,
             message: msg.into(),
-            file_list: None,
+            file: None,
             extra_info: None,
         }
     }
@@ -242,7 +242,7 @@ impl UploadOutputCtx {
         Self {
             result: OutputResultType::Interrupt,
             message: msg.into(),
-            file_list: None,
+            file: None,
             extra_info: None,
         }
     }
@@ -254,16 +254,16 @@ mod output_helper_tests {
     use crate::models::enums::OutputResultType;
 
     #[test]
-    fn success_has_no_files() {
+    fn success_has_no_file() {
         let o = UploadOutputCtx::success("ok");
         assert!(matches!(o.result, OutputResultType::Success));
         assert_eq!(o.message, "ok");
-        assert!(o.file_list.is_none());
+        assert!(o.file.is_none());
         assert!(o.extra_info.is_none());
     }
 
     #[test]
-    fn success_files_carries_files() {
+    fn success_file_carries_file() {
         let f = Arc::new(UploadFileData::new(
             crate::models::enums::FileDataType::FilePath,
             "/tmp/a".into(),
@@ -272,9 +272,9 @@ mod output_helper_tests {
             "image/png".into(),
             0,
         ));
-        let o = UploadOutputCtx::success_files("done", vec![f]);
+        let o = UploadOutputCtx::success_file("done", f);
         assert!(matches!(o.result, OutputResultType::Success));
-        assert_eq!(o.file_list.as_ref().unwrap().len(), 1);
+        assert_eq!(o.file.as_ref().unwrap().name, "a");
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod output_helper_tests {
         let o = UploadOutputCtx::failed("boom");
         assert!(matches!(o.result, OutputResultType::Failed));
         assert_eq!(o.message, "boom");
-        assert!(o.file_list.is_none());
+        assert!(o.file.is_none());
     }
 
     #[test]
