@@ -21,9 +21,12 @@ impl UploadPlugin for DefaultInputHandler {
 
     fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
         match self.run(ctx) {
-            Ok(files) => UploadOutputCtx::success_files(
-                format!("default_input_handler: processed {} file(s)", files.len()),
-                files,
+            Ok(Some(file)) => UploadOutputCtx::success_file(
+                format!("default_input_handler: processed 1 file"),
+                file,
+            ),
+            Ok(None) => UploadOutputCtx::success(
+                "default_input_handler: no file to process",
             ),
             Err(e) => UploadOutputCtx::failed(format!("default_input_handler: {e}")),
         }
@@ -39,56 +42,55 @@ impl UploadPlugin for DefaultInputHandler {
 }
 
 impl DefaultInputHandler {
-    fn run(&self, ctx: &UploadInputCtx) -> Result<Vec<Arc<UploadFileData>>, UploadError> {
+    fn run(&self, ctx: &UploadInputCtx) -> Result<Option<Arc<UploadFileData>>, UploadError> {
         let cache_local = config_util::get_bool(&ctx.config_info, "cache_local").unwrap_or(true);
         let download_network =
             config_util::get_bool(&ctx.config_info, "download_network").unwrap_or(true);
         let sniff_type = config_util::get_bool(&ctx.config_info, "sniff_type").unwrap_or(true);
         let work_dir = ctx.work_dir.as_deref().unwrap_or("");
 
-        let mut out = Vec::with_capacity(ctx.file_list.len());
-        for f in &ctx.file_list {
-            let mut nf = (**f).clone();
-            match nf.data_type {
-                FileDataType::FilePath => {
-                    if sniff_type {
-                        if let Some(mime) = sniff_external(&nf.input_path) {
-                            nf.file_type = mime;
-                        } else {
-                            warn!("default_input_handler: sniff failed for {}", nf.input_path);
-                        }
-                    }
-                    if cache_local {
-                        let wd = require_work_dir(work_dir)?;
-                        let ext = ext_from_name(&nf.name);
-                        let (name, path) = fs_util::import_file(wd, &nf.input_path, ext)?;
-                        nf.size = fs_util::file_size(wd, &name)? as usize;
-                        nf.input_path = path.to_string_lossy().into_owned();
+        let Some(f) = ctx.file.as_ref() else {
+            return Ok(None);
+        };
+        let mut nf = (**f).clone();
+        match nf.data_type {
+            FileDataType::FilePath => {
+                if sniff_type {
+                    if let Some(mime) = sniff_external(&nf.input_path) {
+                        nf.file_type = mime;
+                    } else {
+                        warn!("default_input_handler: sniff failed for {}", nf.input_path);
                     }
                 }
-                FileDataType::NetworkPath => {
-                    if download_network {
-                        let wd = require_work_dir(work_dir)?;
-                        let ext = ext_from_name(&nf.name);
-                        let (name, path) = download_to_workdir(wd, &nf.input_path, ext)?;
-                        nf.size = fs_util::file_size(wd, &name)? as usize;
-                        nf.input_path = path.to_string_lossy().into_owned();
-                        if sniff_type {
-                            if let Some(mime) = sniff_in_workdir(wd, &name) {
-                                nf.file_type = mime;
-                            } else {
-                                warn!("default_input_handler: sniff failed for {}", name);
-                            }
-                        }
-                    }
-                }
-                FileDataType::Binary => {
-                    // 原样透传（字段预留，当前不处理内存数据）
+                if cache_local {
+                    let wd = require_work_dir(work_dir)?;
+                    let ext = ext_from_name(&nf.name);
+                    let (name, path) = fs_util::import_file(wd, &nf.input_path, ext)?;
+                    nf.size = fs_util::file_size(wd, &name)? as usize;
+                    nf.input_path = path.to_string_lossy().into_owned();
                 }
             }
-            out.push(Arc::new(nf));
+            FileDataType::NetworkPath => {
+                if download_network {
+                    let wd = require_work_dir(work_dir)?;
+                    let ext = ext_from_name(&nf.name);
+                    let (name, path) = download_to_workdir(wd, &nf.input_path, ext)?;
+                    nf.size = fs_util::file_size(wd, &name)? as usize;
+                    nf.input_path = path.to_string_lossy().into_owned();
+                    if sniff_type {
+                        if let Some(mime) = sniff_in_workdir(wd, &name) {
+                            nf.file_type = mime;
+                        } else {
+                            warn!("default_input_handler: sniff failed for {}", name);
+                        }
+                    }
+                }
+            }
+            FileDataType::Binary => {
+                // 原样透传（字段预留，当前不处理内存数据）
+            }
         }
-        Ok(out)
+        Ok(Some(Arc::new(nf)))
     }
 }
 
@@ -162,12 +164,12 @@ mod tests {
     }
 
     fn run(
-        files: Vec<Arc<UploadFileData>>,
+        file: Option<Arc<UploadFileData>>,
         config: Option<serde_json::Value>,
         work_dir: Option<String>,
     ) -> UploadOutputCtx {
         let ctx = UploadInputCtx {
-            file_list: files,
+            file,
             config_info: Arc::new(config),
             extra_info: None,
             related_process_info: None,
@@ -190,14 +192,13 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"cache_local": true, "sniff_type": true});
-        let out = run(vec![f], Some(cfg), Some(wd.clone()));
+        let out = run(Some(f), Some(cfg), Some(wd.clone()));
         assert!(matches!(out.result, OutputResultType::Success));
-        let list = out.file_list.as_ref().unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].file_type, "image/png");
-        assert!(list[0].input_path.starts_with(&wd));
-        assert!(list[0].input_path.ends_with(".png"));
-        assert!(list[0].size > 0);
+        let got = out.file.as_ref().unwrap();
+        assert_eq!(got.file_type, "image/png");
+        assert!(got.input_path.starts_with(&wd));
+        assert!(got.input_path.ends_with(".png"));
+        assert!(got.size > 0);
     }
 
     #[test]
@@ -214,11 +215,11 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"cache_local": false, "sniff_type": true});
-        let out = run(vec![f], Some(cfg), Some(wd));
+        let out = run(Some(f), Some(cfg), Some(wd));
         assert!(matches!(out.result, OutputResultType::Success));
-        let list = out.file_list.as_ref().unwrap();
-        assert_eq!(list[0].input_path, src);
-        assert_eq!(list[0].file_type, "image/png");
+        let got = out.file.as_ref().unwrap();
+        assert_eq!(got.input_path, src);
+        assert_eq!(got.file_type, "image/png");
     }
 
     #[test]
@@ -235,9 +236,9 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"cache_local": false, "sniff_type": false});
-        let out = run(vec![f], Some(cfg), Some(wd));
-        let list = out.file_list.as_ref().unwrap();
-        assert_eq!(list[0].file_type, "upstream/x");
+        let out = run(Some(f), Some(cfg), Some(wd));
+        let got = out.file.as_ref().unwrap();
+        assert_eq!(got.file_type, "upstream/x");
     }
 
     #[test]
@@ -250,11 +251,11 @@ mod tests {
             "x/y".into(),
             7,
         ));
-        let out = run(vec![f], None, None);
+        let out = run(Some(f), None, None);
         assert!(matches!(out.result, OutputResultType::Success));
-        let list = out.file_list.as_ref().unwrap();
-        assert_eq!(list[0].name, "blob");
-        assert_eq!(list[0].file_type, "x/y");
+        let got = out.file.as_ref().unwrap();
+        assert_eq!(got.name, "blob");
+        assert_eq!(got.file_type, "x/y");
     }
 
     #[test]
@@ -268,11 +269,11 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"download_network": false});
-        let out = run(vec![f], Some(cfg), None);
+        let out = run(Some(f), Some(cfg), None);
         assert!(matches!(out.result, OutputResultType::Success));
-        let list = out.file_list.as_ref().unwrap();
-        assert_eq!(list[0].input_path, "https://example.com/a.png");
-        assert_eq!(list[0].file_type, "upstream/png");
+        let got = out.file.as_ref().unwrap();
+        assert_eq!(got.input_path, "https://example.com/a.png");
+        assert_eq!(got.file_type, "upstream/png");
     }
 
     #[test]
@@ -289,7 +290,7 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"cache_local": true});
-        let out = run(vec![f], Some(cfg), None);
+        let out = run(Some(f), Some(cfg), None);
         assert!(matches!(out.result, OutputResultType::Failed));
     }
 
@@ -305,7 +306,7 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"cache_local": true});
-        let out = run(vec![f], Some(cfg), Some(wd));
+        let out = run(Some(f), Some(cfg), Some(wd));
         assert!(matches!(out.result, OutputResultType::Failed));
     }
 
@@ -323,13 +324,13 @@ mod tests {
             0,
         ));
         let cfg = serde_json::json!({"download_network": true, "sniff_type": true});
-        let out = run(vec![f], Some(cfg), Some(wd.clone()));
+        let out = run(Some(f), Some(cfg), Some(wd.clone()));
         if matches!(out.result, OutputResultType::Failed) {
             eprintln!("network test failed (expected offline): {}", out.message);
             return;
         }
-        let list = out.file_list.as_ref().unwrap();
-        assert!(list[0].input_path.starts_with(&wd));
+        let got = out.file.as_ref().unwrap();
+        assert!(got.input_path.starts_with(&wd));
     }
 
     #[test]

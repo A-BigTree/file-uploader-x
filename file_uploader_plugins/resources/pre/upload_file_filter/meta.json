@@ -1,8 +1,0 @@
-{
-  "name": "upload_file_filter",
-  "title": "上传文件过滤器",
-  "description": "按文件类型(MIME)、文件名、大小三维过滤上传文件",
-  "version": "0.0.1",
-  "author": "A-BigTree",
-  "phase": "PreUpload"
-}
