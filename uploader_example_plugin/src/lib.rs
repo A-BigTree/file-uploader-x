@@ -16,7 +16,7 @@ impl UploadDylibPlugin for UploaderTestExamplePlugin {
         UploadOutputCtxS {
             result: OutputResultType::Success,
             message: "成功".to_string().into(),
-            file_list: stabby::option::Option::None(),
+            file: stabby::option::Option::None(),
             extra_info: stabby::option::Option::None(),
         }
     }
