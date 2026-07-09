@@ -4,7 +4,7 @@ mod pipeline;
 use config::init_logging;
 use file_uploader_core::pipeline::plugin::UploadPluginInfo;
 use file_uploader_plugins::input::default_input_handler::DefaultInputHandler;
-use file_uploader_plugins::pre_upload::upload_file_filter::UploadFileFilter;
+use file_uploader_plugins::pre_upload::upload_file_validator::UploadFileValidator;
 use file_uploader_sdk::models::ctx::UploadInputCtx;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -18,7 +18,7 @@ fn main() {
     }
 
     let ctx = UploadInputCtx {
-        file_list: vec![],
+        file: None,
         config_info: Arc::new(None),
         extra_info: None,
         related_process_info: None,
@@ -41,18 +41,18 @@ fn main() {
     };
     info!("Input plugin loaded: {}", input_plugin.id);
 
-    let filter_dir = target_dir.join("resources/pre/upload_file_filter");
-    let Ok(filter_plugin) = UploadPluginInfo::new_in_process(
-        filter_dir.to_str().unwrap(),
-        Box::new(UploadFileFilter),
+    let validator_dir = target_dir.join("resources/pre/upload_file_validator");
+    let Ok(validator_plugin) = UploadPluginInfo::new_in_process(
+        validator_dir.to_str().unwrap(),
+        Box::new(UploadFileValidator),
     ) else {
-        error!("Filter plugin load error");
+        error!("Validator plugin load error");
         return;
     };
-    info!("Filter plugin loaded: {}", filter_plugin.id);
+    info!("Validator plugin loaded: {}", validator_plugin.id);
 
-    let in_process_dir = filter_dir.clone();
-    let plugin = filter_plugin;
+    let in_process_dir = validator_dir.clone();
+    let plugin = validator_plugin;
     info!("Plugin loaded: {}", plugin.id);
     let result = match plugin.slot.execute(&ctx) {
         Ok(r) => r,

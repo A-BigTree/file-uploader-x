@@ -71,7 +71,7 @@ impl UploadPlugin for SizeLimiter {
     fn phase(&self) -> UploadPhase { UploadPhase::PreUpload }
     fn execute(&self, ctx: &UploadInputCtx) -> UploadOutputCtx {
         // 从 ctx.config_info（Arc<Option<Value>>）读运行期配置
-        // 处理 ctx.file_list，返回 UploadOutputCtx
+        // 处理 ctx.file（Option<Arc<UploadFileData>>），返回 UploadOutputCtx
         todo!()
     }
 
@@ -96,12 +96,12 @@ impl UploadPlugin for SizeLimiter {
 
 **优先使用 `UploadOutputCtx` 关联函数**构造输出，避免手写字面量：
 
-- 正常：`UploadOutputCtx::success_files(msg, files)`（`success(msg)` 无文件产出）
-- 过滤/校验类插件，若处理后列表为空 → `UploadOutputCtx::failed(msg)`（会中断 pipeline）
+- 正常：`UploadOutputCtx::success_file(msg, file)`（`success(msg)` 无文件产出）
+- 过滤/校验类插件，校验不通过 → `UploadOutputCtx::failed(msg)`（会中断 pipeline）
 - 中断：`UploadOutputCtx::interrupt(msg)`
 - `extra_info` 需传递时仍可先构造再赋值字段
 
-行为约定：正常 `result = Success`、`message` 记统计；空列表用 `Failed`；`extra_info: Option<HashMap<String,String>>` 可累积传递给下游插件。
+行为约定：正常 `result = Success`、`message` 记统计；校验不通过用 `Failed`；`extra_info: Option<HashMap<String,String>>` 可累积传递给下游插件。
 
 ### 5. 活动目录与文件 IO
 
@@ -121,7 +121,7 @@ impl UploadPlugin for SizeLimiter {
 
 ### 7. 测试（TDD）
 
-单元测试置于插件文件内 `#[cfg(test)] mod tests`。构造 `UploadInputCtx`（含 `config_info` 与 `file_list`），断言 `execute` 输出。覆盖：正常路径、边界（空列表）、`config_info` 为 None。参考 `file_type_filter.rs` 的测试组织。
+单元测试置于插件文件内 `#[cfg(test)] mod tests`。构造 `UploadInputCtx`（含 `config_info` 与 `file`），断言 `execute` 输出。覆盖：正常路径、边界（`file` 为 None）、`config_info` 为 None。参考 `upload_file_validator.rs` 的测试组织。
 
 构造 `UploadInputCtx` 时须补 `work_dir` 字段（不涉及文件 IO 的插件测试用 `None`；涉及者用临时目录）。
 
@@ -146,7 +146,7 @@ let out = table.execute_pipeline(input_ctx, None);
 
 ## 范例
 
-`file_uploader_plugins/src/pre_upload/file_type_filter.rs` —— 按 `pass_type`/`reject_type` 用 glob 通配符过滤，处理后为空返回 `Failed`，含完整单元测试。该插件已改造为使用 `config_util::get_list` 与 `UploadOutputCtx::failed/success_files`，可作为新工具用法的范例。
+`file_uploader_plugins/src/pre_upload/upload_file_validator.rs` —— 按 `pass_type`/`reject_type`/`pass_name`/`max_size` 四维校验单个文件，不通过返回 `Failed`，含完整单元测试。该插件使用 `config_util::get_list` 与 `UploadOutputCtx::failed/success_file`，可作为新工具用法的范例。
 
 ## 常见错误
 
@@ -171,6 +171,6 @@ let out = table.execute_pipeline(input_ctx, None);
 - [ ] `new_in_process` 路径指向 `target/resources/<phase>/<name>`
 - [ ] 注册时 `registry_config` 传入实际运行值
 - [ ] 读配置走 `config_util`（不手写 `Value` 解析）
-- [ ] 构造输出走 `UploadOutputCtx` 关联函数（success/failed/interrupt/success_files）
+- [ ] 构造输出走 `UploadOutputCtx` 关联函数（success/failed/interrupt/success_file）
 - [ ] 读写中间文件走 `fs_util`（不直接用 `std::fs`）
 - [ ] 测试构造 `UploadInputCtx` 时补 `work_dir` 字段

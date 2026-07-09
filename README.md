@@ -135,7 +135,7 @@ impl UploadPlugin for MyPlugin {
         UploadOutputCtx {
             result: OutputResultType::Success,
             message: "done".to_string(),
-            file_list: None,
+            file: None,
             extra_info: None,
         }
     }
@@ -198,7 +198,7 @@ impl UploadDylibPlugin for MyDylibPlugin {
         UploadOutputCtxS {
             result: OutputResultType::Success,
             message: "成功".to_string().into(),
-            file_list: stabby::option::Option::None(),
+            file: stabby::option::Option::None(),
             extra_info: stabby::option::Option::None(),
         }
     }

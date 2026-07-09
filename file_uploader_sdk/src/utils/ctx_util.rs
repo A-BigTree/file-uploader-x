@@ -4,7 +4,6 @@ use serde_json::Value;
 use stabby::option::Option as SOption;
 use stabby::string::String as SString;
 use stabby::sync::Arc as SArc;
-use stabby::vec::Vec as SVec;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::error;
@@ -22,11 +21,10 @@ pub fn convert_file_data_s(input: &UploadFileData) -> UploadFileDataS {
 }
 
 pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
-    let file_list: SVec<SArc<UploadFileDataS>> = input
-        .file_list
-        .iter()
-        .map(|file| SArc::new(convert_file_data_s(file)))
-        .collect();
+    let file = match &input.file {
+        Some(f) => SOption::Some(SArc::new(convert_file_data_s(f))),
+        None => stabby::option::Option::None(),
+    };
 
     let extra_info: SOption<SString> = match &input.extra_info {
         None => None.into(),
@@ -53,7 +51,7 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
     };
 
     UploadInputCtxS {
-        file_list,
+        file,
         config_info,
         extra_info,
         work_dir: match &input.work_dir {
@@ -64,11 +62,10 @@ pub fn convert_input_ctx_s(input: &UploadInputCtx) -> UploadInputCtxS {
 }
 
 pub fn convert_input_ctx(input: &UploadInputCtxS) -> UploadInputCtx {
-    let file_list: Vec<Arc<UploadFileData>> = input
-        .file_list
-        .iter()
-        .map(|file| Arc::new(convert_file_data(file)))
-        .collect();
+    let file: Option<Arc<UploadFileData>> = input.file.match_ref(
+        |f| Some(Arc::new(convert_file_data(f))),
+        || None,
+    );
 
     let extra_info: Option<HashMap<String, String>> = input.extra_info.match_ref(
         |extra_info_s| {
@@ -82,7 +79,7 @@ pub fn convert_input_ctx(input: &UploadInputCtxS) -> UploadInputCtx {
         || None,
     );
     UploadInputCtx {
-        file_list,
+        file,
         config_info: input.config_info.match_ref(
             |config_info_s| Arc::new(get_config(config_info_s)),
             || Arc::new(None),
@@ -106,14 +103,8 @@ pub fn convert_file_data(input: &UploadFileDataS) -> UploadFileData {
 }
 
 pub fn convert_output_ctx(input: &UploadOutputCtxS) -> UploadOutputCtx {
-    let file_list: Option<Vec<Arc<UploadFileData>>> = input.file_list.match_ref(
-        |file_list_s| {
-            let file_list: Vec<Arc<UploadFileData>> = file_list_s
-                .iter()
-                .map(|file| Arc::new(convert_file_data(file)))
-                .collect();
-            Some(file_list)
-        },
+    let file: Option<Arc<UploadFileData>> = input.file.match_ref(
+        |f| Some(Arc::new(convert_file_data(f))),
         || None,
     );
 
@@ -132,7 +123,7 @@ pub fn convert_output_ctx(input: &UploadOutputCtxS) -> UploadOutputCtx {
     UploadOutputCtx {
         result: input.result.clone(),
         message: input.message.clone().into(),
-        file_list,
+        file,
         extra_info,
     }
 }
@@ -145,14 +136,14 @@ mod work_dir_tests {
 
     fn input_with_work_dir(wd: Option<&str>) -> UploadInputCtx {
         UploadInputCtx {
-            file_list: vec![Arc::new(UploadFileData::new(
+            file: Some(Arc::new(UploadFileData::new(
                 FileDataType::FilePath,
                 "/tmp/a".into(),
                 "a".into(),
                 "a".into(),
                 "image/png".into(),
                 0,
-            ))],
+            ))),
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,

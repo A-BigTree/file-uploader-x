@@ -171,7 +171,7 @@ impl UploadPluginRegistryTable {
         }
 
         UploadInputCtx {
-            file_list: output.file_list.clone().unwrap_or_default(),
+            file: output.file.clone(),
             config_info: Arc::new(None),
             extra_info: if extra_info.is_empty() {
                 None
@@ -221,7 +221,7 @@ impl UploadPluginRegistryTable {
 
             for plugin in &phase_plugins {
                 let plugin_input = UploadInputCtx {
-                    file_list: current_ctx.file_list.clone(),
+                    file: current_ctx.file.clone(),
                     config_info: Arc::new(plugin.registry_config.clone()),
                     extra_info: current_ctx.extra_info.clone(),
                     related_process_info: current_ctx.related_process_info.clone(),
@@ -246,7 +246,7 @@ impl UploadPluginRegistryTable {
                         let fail_ctx = UploadOutputCtx {
                             result: file_uploader_sdk::models::enums::OutputResultType::Failed,
                             message: e.to_string(),
-                            file_list: None,
+                            file: None,
                             extra_info: None,
                         };
                         if let Some(cb) = &callback {
@@ -307,7 +307,7 @@ impl UploadPluginRegistryTable {
             None => UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Success,
                 message: String::new(),
-                file_list: Some(current_ctx.file_list),
+                file: current_ctx.file,
                 extra_info: current_ctx.extra_info,
             },
         }
@@ -337,7 +337,7 @@ mod tests {
             UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Success,
                 message: "mock execute".to_string(),
-                file_list: None,
+                file: None,
                 extra_info: None,
             }
         }
@@ -603,7 +603,7 @@ mod tests {
                 UploadOutputCtx {
                     result: file_uploader_sdk::models::enums::OutputResultType::Success,
                     message: "mock execute".to_string(),
-                    file_list: None,
+                    file: None,
                     extra_info: None,
                 }
             }
@@ -729,7 +729,7 @@ mod tests {
             UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Failed,
                 message: "intentional failure".to_string(),
-                file_list: None,
+                file: None,
                 extra_info: None,
             }
         }
@@ -788,7 +788,7 @@ mod tests {
             UploadOutputCtx {
                 result: file_uploader_sdk::models::enums::OutputResultType::Success,
                 message: "ok".to_string(),
-                file_list: None,
+                file: None,
                 extra_info: None,
             }
         }
@@ -798,7 +798,7 @@ mod tests {
     fn test_execute_pipeline_empty_registry() {
         let registry = UploadPluginRegistryTable::new("test".to_string(), vec![]);
         let input = UploadInputCtx {
-            file_list: vec![],
+            file: None,
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
@@ -818,7 +818,7 @@ mod tests {
         let registry = UploadPluginRegistryTable::new("test".to_string(), vec![reg_info]);
 
         let input = UploadInputCtx {
-            file_list: vec![],
+            file: None,
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
@@ -879,7 +879,7 @@ mod tests {
             UploadPluginRegistryTable::new("test".to_string(), vec![p1, p2, p3]);
 
         let input = UploadInputCtx {
-            file_list: vec![],
+            file: None,
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
@@ -955,7 +955,7 @@ mod tests {
         let registry = UploadPluginRegistryTable::new("test".to_string(), vec![reg_info]);
 
         let input = UploadInputCtx {
-            file_list: vec![],
+            file: None,
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
@@ -985,7 +985,7 @@ mod tests {
                 UploadOutputCtx {
                     result: file_uploader_sdk::models::enums::OutputResultType::Success,
                     message: "ok".into(),
-                    file_list: Some(ctx.file_list.clone()),
+                    file: ctx.file.clone(),
                     extra_info: None,
                 }
             }
@@ -1020,7 +1020,7 @@ mod tests {
         let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
 
         let input = UploadInputCtx {
-            file_list: vec![],
+            file: None,
             config_info: Arc::new(None),
             extra_info: None,
             related_process_info: None,
