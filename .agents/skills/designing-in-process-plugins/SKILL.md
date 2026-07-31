@@ -11,6 +11,9 @@ description: Use when creating, implementing, or refactoring an in-process plugi
 
 一个插件 = **资源目录**（`meta.json` + `config.json` + `README.md`）+ **Rust 实现** + **模块注册** + **build.rs 复制**（已统一）+ **pipeline 注册**。
 
+> 本 skill 是**操作手册**（怎么一步步做）。字段级完整规范、`ValidationReason` 全表、
+> ABI 注意事项等请查规范文档 `docs/references/plugin-specification.md`。
+
 ## When to Use
 
 - 新增一个进程内插件（任意阶段）
@@ -360,6 +363,12 @@ let out = table.execute_pipeline(input_ctx, None);
 - id 自动生成：`in_process_{phase:?}_{name}`（如 `in_process_PreUpload_size_limiter`）
 - `registry_config` 是运行期实际值；不传则 `config_info` 为 `None`
 - 宽松构建用 `new`（只 warn 不失败），之后可读 `table.declarative_errors()` 拿结构化明细
+
+## 相关文档
+
+- **插件规范总纲**：`docs/references/plugin-specification.md`
+  —— 字段级完整规范、`ValidationReason` 全表、stabby ABI 注意事项、构建期资源复制细节
+- 历史设计与实现计划：`docs/superpowers/specs/` 与 `docs/superpowers/plans/`
 
 ## 范例
 
