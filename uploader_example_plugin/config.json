@@ -2,15 +2,16 @@
   "access": {
     "fs_read": true,
     "fs_write": false,
-    "network": false
+    "network": true
   },
-  "params": [
+  "common": [
     {
       "key": "pass_type",
       "title": "允许上传的文件类型",
       "description": "允许上传的文件类型（为空表示全部允许）",
       "config_type": "Custom",
       "default_value": [],
+      "required": false,
       "form": {
         "type": "select",
         "multiple": true,
@@ -23,11 +24,138 @@
       "description": "不允许上传的文件类型（为空表示全部允许）",
       "config_type": "Custom",
       "default_value": [],
+      "required": false,
       "form": {
         "type": "select",
         "multiple": true,
         "allow_custom": true
       }
+    },
+    {
+      "key": "retry_times",
+      "title": "重试次数",
+      "description": "上传失败后的重试次数",
+      "config_type": "Default",
+      "default_value": 3,
+      "required": false,
+      "form": { "type": "number", "min": 0, "max": 10, "step": 1, "integer": true }
+    }
+  ],
+  "groups": [
+    {
+      "group": "oss",
+      "title": "阿里云 OSS",
+      "description": "上传到阿里云对象存储",
+      "params": [
+        {
+          "key": "endpoint",
+          "title": "Endpoint",
+          "description": "OSS 服务地址",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": {
+            "type": "text",
+            "min_len": 8,
+            "max_len": 256,
+            "pattern": "^https?://.+",
+            "placeholder": "https://oss-cn-hangzhou.aliyuncs.com"
+          }
+        },
+        {
+          "key": "bucket",
+          "title": "Bucket",
+          "description": "存储桶名称",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": {
+            "type": "text",
+            "min_len": 3,
+            "max_len": 63,
+            "pattern": "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$"
+          }
+        },
+        {
+          "key": "access_key",
+          "title": "AccessKey ID",
+          "description": "访问凭证 ID",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "min_len": 1, "max_len": 128 }
+        },
+        {
+          "key": "access_secret",
+          "title": "AccessKey Secret",
+          "description": "访问凭证密钥（密码框，前端不回显）",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "secret": true, "min_len": 1, "max_len": 256 }
+        },
+        {
+          "key": "use_https",
+          "title": "使用 HTTPS",
+          "description": "是否使用 HTTPS 传输",
+          "config_type": "Default",
+          "default_value": true,
+          "required": false,
+          "form": { "type": "switch" }
+        }
+      ]
+    },
+    {
+      "group": "local",
+      "title": "本地存储",
+      "description": "上传到本机目录",
+      "params": [
+        {
+          "key": "base_dir",
+          "title": "存储根目录",
+          "description": "文件落地的绝对路径",
+          "config_type": "Default",
+          "default_value": "/tmp/uploads",
+          "required": true,
+          "form": { "type": "text", "min_len": 1, "max_len": 512, "pattern": "^/.*" }
+        },
+        {
+          "key": "dir_mode",
+          "title": "目录权限",
+          "description": "创建目录时的权限（十进制表示的八进制值，755 → 493）",
+          "config_type": "Default",
+          "default_value": 493,
+          "required": false,
+          "form": { "type": "number", "min": 0, "max": 511, "integer": true }
+        },
+        {
+          "key": "overwrite",
+          "title": "允许覆盖",
+          "description": "同名文件是否覆盖",
+          "config_type": "Default",
+          "default_value": false,
+          "required": false,
+          "form": { "type": "switch" }
+        },
+        {
+          "key": "naming",
+          "title": "命名策略",
+          "description": "落地文件的命名方式",
+          "config_type": "Default",
+          "default_value": "uuid",
+          "required": true,
+          "form": {
+            "type": "select",
+            "multiple": false,
+            "allow_custom": false,
+            "options": [
+              { "label": "原始文件名", "value": "origin" },
+              { "label": "UUID", "value": "uuid" },
+              { "label": "内容哈希", "value": "hash" }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

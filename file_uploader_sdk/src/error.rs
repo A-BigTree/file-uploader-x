@@ -23,6 +23,14 @@ pub enum UploadError {
     #[error("Plugin load error: {0}")]
     PluginLoadError(String),
 
+    /// 插件参数校验失败（框架声明式约束）
+    #[error("Plugin config invalid: {0}")]
+    PluginConfigInvalid(String),
+
+    /// 插件自定义入参校验失败（validate_params 返回）
+    #[error("Plugin param invalid: {0}")]
+    PluginParamInvalid(String),
+
     /// WorkDir / 沙箱错误
     #[error("work_dir is not set on context")]
     WorkDirNotSet,

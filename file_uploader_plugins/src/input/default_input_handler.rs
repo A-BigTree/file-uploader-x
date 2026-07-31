@@ -10,6 +10,9 @@ use tracing::{info, warn};
 
 pub struct DefaultInputHandler;
 
+/// `download_timeout_secs` 缺省值（秒），与 config.json 的 default_value 保持一致
+const DEFAULT_DOWNLOAD_TIMEOUT_SECS: i64 = 30;
+
 impl UploadPlugin for DefaultInputHandler {
     fn name(&self) -> &'static str {
         "default_input_handler"
@@ -47,6 +50,9 @@ impl DefaultInputHandler {
         let download_network =
             config_util::get_bool(&ctx.config_info, "download_network").unwrap_or(true);
         let sniff_type = config_util::get_bool(&ctx.config_info, "sniff_type").unwrap_or(true);
+        let download_timeout_secs = config_util::get_i64(&ctx.config_info, "download_timeout_secs")
+            .filter(|v| *v > 0)
+            .unwrap_or(DEFAULT_DOWNLOAD_TIMEOUT_SECS) as u64;
         let work_dir = ctx.work_dir.as_deref().unwrap_or("");
 
         let Some(f) = ctx.file.as_ref() else {
@@ -74,7 +80,12 @@ impl DefaultInputHandler {
                 if download_network {
                     let wd = require_work_dir(work_dir)?;
                     let ext = ext_from_name(&nf.name);
-                    let (name, path) = download_to_workdir(wd, &nf.input_path, ext)?;
+                    let (name, path) = download_to_workdir(
+                        wd,
+                        &nf.input_path,
+                        ext,
+                        download_timeout_secs,
+                    )?;
                     nf.size = fs_util::file_size(wd, &name)? as usize;
                     nf.input_path = path.to_string_lossy().into_owned();
                     if sniff_type {
@@ -130,8 +141,17 @@ fn download_to_workdir(
     work_dir: &str,
     url: &str,
     ext: &str,
+    timeout_secs: u64,
 ) -> Result<(String, PathBuf), UploadError> {
-    let resp = reqwest::blocking::get(url)
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|e| {
+            UploadError::PluginLoadError(format!("build http client failed for {url}: {e}"))
+        })?;
+    let resp = client
+        .get(url)
+        .send()
         .map_err(|e| UploadError::PluginLoadError(format!("download failed for {url}: {e}")))?;
     let status = resp.status();
     if !status.is_success() {
@@ -172,7 +192,6 @@ mod tests {
             file,
             config_info: Arc::new(config),
             extra_info: None,
-            related_process_info: None,
             work_dir,
         };
         DefaultInputHandler.execute(&ctx)

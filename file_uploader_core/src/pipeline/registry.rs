@@ -1,10 +1,11 @@
-use crate::pipeline::plugin::UploadPluginInfo;
+use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
+use crate::pipeline::plugin::{UploadPluginInfo, ValidationError, errors_to_string};
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
-use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
 use serde_json::Value;
 use std::sync::Arc;
+use tracing::warn;
 
 pub enum PluginRegistryStatus {
     // 禁用
@@ -59,6 +60,24 @@ impl PluginRegistryInfo {
     pub fn get_plugin_phase(&self) -> UploadPhase {
         self.plugin_instance.get_meta().phase.clone()
     }
+
+    /// **声明式校验**：按插件 config.json 的 schema 校验 `registry_config`，不加载插件。
+    pub fn validate_declarative(&self) -> Result<(), Vec<ValidationError>> {
+        self.plugin_instance
+            .validate_config_declarative(&self.registry_config)
+    }
+
+    /// **插件级校验**：以 `registry_config` 构造仅含配置的 ctx 调用插件 `validate_params`
+    /// （会触发插件懒加载）。
+    pub fn validate_params(&self) -> Result<(), UploadError> {
+        let ctx = UploadInputCtx {
+            file: None,
+            config_info: Arc::new(self.registry_config.clone()),
+            extra_info: None,
+            work_dir: None,
+        };
+        self.plugin_instance.validate_params(&ctx)
+    }
 }
 
 impl PartialEq for PluginRegistryInfo {
@@ -111,12 +130,91 @@ impl Ord for PluginRegistryInfo {
 pub struct UploadPluginRegistryTable {
     pub id: String,
     plugins: Vec<PluginRegistryInfo>,
+    /// 构建期声明式校验结果缓存：(plugin_id, 错误)
+    declarative_errors: Vec<(String, ValidationError)>,
 }
 
 impl UploadPluginRegistryTable {
+    /// 构建注册表：排序 + **声明式**校验（不加载任何插件，保持懒加载语义）。
+    /// 声明式错误仅记录并 warn，不阻断构建；需要硬失败请用 [`Self::try_new`]。
     pub fn new(id: String, mut plugins: Vec<PluginRegistryInfo>) -> Self {
         plugins.sort();
-        UploadPluginRegistryTable { id, plugins }
+        let declarative_errors = Self::collect_declarative_errors(&plugins);
+        for (plugin_id, err) in &declarative_errors {
+            warn!(
+                "registry '{}' plugin '{}' config invalid: {}",
+                id, plugin_id, err
+            );
+        }
+        UploadPluginRegistryTable {
+            id,
+            plugins,
+            declarative_errors,
+        }
+    }
+
+    /// 严格构建：任一插件声明式校验失败即返回 Err。
+    pub fn try_new(
+        id: String,
+        plugins: Vec<PluginRegistryInfo>,
+    ) -> Result<Self, Vec<(String, ValidationError)>> {
+        let table = Self::new(id, plugins);
+        if table.declarative_errors.is_empty() {
+            Ok(table)
+        } else {
+            Err(table.declarative_errors)
+        }
+    }
+
+    /// 收集全部插件的声明式校验错误（不加载插件）
+    fn collect_declarative_errors(
+        plugins: &[PluginRegistryInfo],
+    ) -> Vec<(String, ValidationError)> {
+        plugins
+            .iter()
+            .flat_map(|p| {
+                let plugin_id = p.plugin_instance.get_id();
+                match p.validate_declarative() {
+                    Ok(()) => Vec::new(),
+                    Err(errs) => errs
+                        .into_iter()
+                        .map(|e| (plugin_id.clone(), e))
+                        .collect::<Vec<_>>(),
+                }
+            })
+            .collect()
+    }
+
+    /// 构建期缓存的声明式校验错误（结构化明细）
+    pub fn declarative_errors(&self) -> &[(String, ValidationError)] {
+        &self.declarative_errors
+    }
+
+    /// **全量校验**：声明式 + 插件级（会加载全部插件）。
+    pub fn validate_all(&self) -> Result<(), Vec<UploadError>> {
+        let mut errors: Vec<UploadError> = self
+            .declarative_errors
+            .iter()
+            .map(|(plugin_id, e)| {
+                UploadError::PluginConfigInvalid(format!("plugin '{}': {}", plugin_id, e))
+            })
+            .collect();
+
+        for p in &self.plugins {
+            if p.validate_declarative().is_err() {
+                // 声明式已失败，跳过插件级校验避免噪声
+                continue;
+            }
+            if let Err(e) = p.validate_params() {
+                errors.push(e);
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     pub fn get_id(&self) -> &str {
@@ -146,12 +244,33 @@ impl UploadPluginRegistryTable {
             .collect()
     }
 
+    /// 预加载全部插件，并在加载成功后执行插件级 `validate_params`。
+    /// 构建期的声明式错误也会一并折叠返回。
     pub fn preload_all(&self) -> Result<(), Vec<UploadError>> {
-        let errors: Vec<UploadError> = self
-            .plugins
-            .iter()
-            .filter_map(|p| p.plugin_instance.slot.get_or_init().err())
-            .collect();
+        let mut errors: Vec<UploadError> = Vec::new();
+
+        for (plugin_id, e) in &self.declarative_errors {
+            errors.push(UploadError::PluginConfigInvalid(format!(
+                "plugin '{}': {}",
+                plugin_id, e
+            )));
+        }
+
+        for p in &self.plugins {
+            if let Err(e) = p.plugin_instance.slot.get_or_init() {
+                errors.push(e);
+                continue;
+            }
+            // 声明式失败的插件不再跑插件级校验（错误已记录）
+            if let Err(errs) = p.validate_declarative() {
+                let _ = errors_to_string(&errs);
+                continue;
+            }
+            if let Err(e) = p.validate_params() {
+                errors.push(e);
+            }
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -178,7 +297,6 @@ impl UploadPluginRegistryTable {
             } else {
                 Some(extra_info)
             },
-            related_process_info: source_ctx.related_process_info.clone(),
             work_dir: source_ctx.work_dir.clone(),
         }
     }
@@ -224,7 +342,6 @@ impl UploadPluginRegistryTable {
                     file: current_ctx.file.clone(),
                     config_info: Arc::new(plugin.registry_config.clone()),
                     extra_info: current_ctx.extra_info.clone(),
-                    related_process_info: current_ctx.related_process_info.clone(),
                     work_dir: current_ctx.work_dir.clone(),
                 };
 
@@ -317,7 +434,9 @@ impl UploadPluginRegistryTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::plugin::{LazyPluginSlot, LazySlotSource, PluginConfigInfo, PluginMeta};
+    use crate::pipeline::plugin::{
+        LazyPluginSlot, LazySlotSource, PluginConfigInfo, PluginMeta, ValidationReason,
+    };
     use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
     use std::sync::Mutex;
     use std::sync::OnceLock;
@@ -368,6 +487,7 @@ mod tests {
             meta,
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
+            readme_path: None,
             slot,
         })
     }
@@ -648,6 +768,7 @@ mod tests {
             meta: meta.clone(),
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
+            readme_path: None,
             slot: slot1,
         });
 
@@ -656,6 +777,7 @@ mod tests {
             meta,
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
+            readme_path: None,
             slot: slot2,
         });
 
@@ -758,6 +880,7 @@ mod tests {
             meta,
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
+            readme_path: None,
             slot,
         })
     }
@@ -801,7 +924,6 @@ mod tests {
             file: None,
             config_info: Arc::new(None),
             extra_info: None,
-            related_process_info: None,
             work_dir: None,
         };
         let result = registry.execute_pipeline(input, None);
@@ -821,7 +943,6 @@ mod tests {
             file: None,
             config_info: Arc::new(None),
             extra_info: None,
-            related_process_info: None,
             work_dir: None,
         };
 
@@ -882,7 +1003,6 @@ mod tests {
             file: None,
             config_info: Arc::new(None),
             extra_info: None,
-            related_process_info: None,
             work_dir: None,
         };
 
@@ -942,6 +1062,7 @@ mod tests {
             meta,
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test".to_string(),
+            readme_path: None,
             slot,
         });
 
@@ -958,7 +1079,6 @@ mod tests {
             file: None,
             config_info: Arc::new(None),
             extra_info: None,
-            related_process_info: None,
             work_dir: None,
         };
 
@@ -1014,6 +1134,7 @@ mod tests {
             meta,
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test".to_string(),
+            readme_path: None,
             slot,
         });
         let reg = PluginRegistryInfo::new(info, 1, PluginRegistryStatus::Enable, None);
@@ -1023,10 +1144,221 @@ mod tests {
             file: None,
             config_info: Arc::new(None),
             extra_info: None,
-            related_process_info: None,
             work_dir: Some("/data/wd-flow".to_string()),
         };
         table.execute_pipeline(input, None);
         assert_eq!(seen.lock().unwrap().as_deref(), Some("/data/wd-flow"));
+    }
+
+    // ==================== 配置校验 ====================
+
+    /// 带 schema 的插件：一个 required text（common） + 一个分组
+    fn schema_plugin_info(id: &str, config_json: &str) -> Arc<UploadPluginInfo> {
+        let meta = Arc::new(PluginMeta {
+            name: id.to_string(),
+            title: "Schema Plugin".to_string(),
+            version: "1.0.0".to_string(),
+            description: "schema plugin".to_string(),
+            author: None,
+            phase: UploadPhase::Upload,
+        });
+        let config: PluginConfigInfo = serde_json::from_str(config_json).unwrap();
+        let plugin = std::sync::Arc::new(CountingValidatePlugin::default())
+            as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
+        let slot = LazyPluginSlot {
+            source: LazySlotSource::InProcess {
+                resource_dir: "/test".to_string(),
+                plugin,
+            },
+            inner: OnceLock::new(),
+        };
+        Arc::new(UploadPluginInfo {
+            id: id.to_string(),
+            meta,
+            config: Arc::new(config),
+            path: "/test".to_string(),
+            readme_path: None,
+            slot,
+        })
+    }
+
+    /// 一个会在 validate_params 中拒绝特定配置的插件，并记录加载次数
+    #[derive(Default)]
+    struct CountingValidatePlugin;
+
+    impl file_uploader_sdk::models::interface::UploadPlugin for CountingValidatePlugin {
+        fn name(&self) -> &'static str {
+            "counting_validate_plugin"
+        }
+        fn phase(&self) -> UploadPhase {
+            UploadPhase::Upload
+        }
+        fn execute(&self, _ctx: &UploadInputCtx) -> UploadOutputCtx {
+            UploadOutputCtx::success("ok")
+        }
+        fn validate_params(&self, ctx: &UploadInputCtx) -> Result<(), String> {
+            match file_uploader_sdk::utils::config_util::get_str(&ctx.config_info, "token") {
+                Some(t) if t == "forbidden" => Err("token 不允许为 forbidden".to_string()),
+                _ => Ok(()),
+            }
+        }
+    }
+
+    const COMMON_REQUIRED_SCHEMA: &str = r#"{
+        "common": [
+            {
+                "key": "token",
+                "title": "凭证",
+                "config_type": "Default",
+                "default_value": "",
+                "required": true,
+                "form": { "type": "text" }
+            }
+        ]
+    }"#;
+
+    const GROUPED_SCHEMA: &str = r#"{
+        "common": [],
+        "groups": [
+            { "group": "oss", "title": "OSS", "params": [] },
+            { "group": "local", "title": "Local", "params": [] }
+        ]
+    }"#;
+
+    #[test]
+    fn test_new_records_declarative_errors_without_loading() {
+        let info = schema_plugin_info("schema_p", COMMON_REQUIRED_SCHEMA);
+        // registry_config 缺 required 的 token
+        let reg = PluginRegistryInfo::new(info.clone(), 1, PluginRegistryStatus::Enable, None);
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+
+        // 记录了声明式错误
+        let errs = table.declarative_errors();
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].0, "schema_p");
+        assert_eq!(errs[0].1.key.as_deref(), Some("token"));
+        assert_eq!(errs[0].1.reason, ValidationReason::Required);
+
+        // 但插件未被加载（懒加载语义保持）
+        assert!(info.slot.inner.get().is_none());
+    }
+
+    #[test]
+    fn test_new_with_valid_config_has_no_errors() {
+        let info = schema_plugin_info("schema_ok", COMMON_REQUIRED_SCHEMA);
+        let reg = PluginRegistryInfo::new(
+            info.clone(),
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"token": "abc"})),
+        );
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+        assert!(table.declarative_errors().is_empty());
+        assert!(info.slot.inner.get().is_none());
+    }
+
+    #[test]
+    fn test_try_new_rejects_missing_required_param() {
+        let info = schema_plugin_info("schema_p", COMMON_REQUIRED_SCHEMA);
+        let reg = PluginRegistryInfo::new(info, 1, PluginRegistryStatus::Enable, None);
+        let result = UploadPluginRegistryTable::try_new("t".to_string(), vec![reg]);
+        let errs = result.err().expect("try_new should reject invalid config");
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].1.reason, ValidationReason::Required);
+
+        // 合法配置可以构建成功
+        let info2 = schema_plugin_info("schema_ok", COMMON_REQUIRED_SCHEMA);
+        let reg2 = PluginRegistryInfo::new(
+            info2,
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"token": "abc"})),
+        );
+        assert!(UploadPluginRegistryTable::try_new("t".to_string(), vec![reg2]).is_ok());
+    }
+
+    #[test]
+    fn test_preload_all_runs_plugin_validate_params() {
+        // 声明式通过，但插件级 validate_params 拒绝
+        let info = schema_plugin_info("schema_p", COMMON_REQUIRED_SCHEMA);
+        let reg = PluginRegistryInfo::new(
+            info.clone(),
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"token": "forbidden"})),
+        );
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+        assert!(table.declarative_errors().is_empty());
+
+        let errs = table
+            .preload_all()
+            .err()
+            .expect("preload_all should surface plugin validate_params error");
+        assert_eq!(errs.len(), 1);
+        assert!(matches!(errs[0], UploadError::PluginParamInvalid(_)));
+        assert!(errs[0].to_string().contains("forbidden"));
+        // 插件已被加载
+        assert!(info.slot.inner.get().is_some());
+    }
+
+    #[test]
+    fn test_preload_all_ok_when_all_valid() {
+        let info = schema_plugin_info("schema_ok", COMMON_REQUIRED_SCHEMA);
+        let reg = PluginRegistryInfo::new(
+            info,
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"token": "abc"})),
+        );
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+        assert!(table.preload_all().is_ok());
+    }
+
+    #[test]
+    fn test_validate_all_reports_group_unknown() {
+        let info = schema_plugin_info("grouped_p", GROUPED_SCHEMA);
+        let reg = PluginRegistryInfo::new(
+            info,
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"group": "s3"})),
+        );
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+
+        let errs = table.validate_all().err().expect("group s3 is unknown");
+        assert_eq!(errs.len(), 1);
+        assert!(matches!(errs[0], UploadError::PluginConfigInvalid(_)));
+        let msg = errs[0].to_string();
+        assert!(msg.contains("grouped_p"), "got: {msg}");
+        assert!(msg.contains("s3"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_validate_all_ok_for_known_group() {
+        let info = schema_plugin_info("grouped_ok", GROUPED_SCHEMA);
+        let reg = PluginRegistryInfo::new(
+            info,
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"group": "oss"})),
+        );
+        let table = UploadPluginRegistryTable::new("t".to_string(), vec![reg]);
+        assert!(table.validate_all().is_ok());
+    }
+
+    #[test]
+    fn test_registry_info_validate_declarative_and_params() {
+        let info = schema_plugin_info("p", COMMON_REQUIRED_SCHEMA);
+        let reg = PluginRegistryInfo::new(
+            info,
+            1,
+            PluginRegistryStatus::Enable,
+            Some(serde_json::json!({"token": "forbidden"})),
+        );
+        // 声明式通过（token 非空）
+        assert!(reg.validate_declarative().is_ok());
+        // 插件级拒绝
+        let e = reg.validate_params().unwrap_err();
+        assert!(matches!(e, UploadError::PluginParamInvalid(_)));
     }
 }
