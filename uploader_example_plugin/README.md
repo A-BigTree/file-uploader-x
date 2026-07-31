@@ -1,128 +1,134 @@
-# 动态加载测试插件（uploader_test_example_plugin）
+# 动态加载测试插件
 
-> 阶段：`PreUpload` ｜ 版本：`0.0.1` ｜ 作者：`A-BigTree` ｜ 类型：**动态库插件（cdylib）**
+框架自带的示例插件，用来演示"一个插件可以有多种工作模式"这件事。
 
-## 1. 功能简介
+它本身不做实际上传，只把收到的配置打印出来 —— 主要作用是给你一个可以照抄的配置样板。
 
-框架的 dylib 插件参考实现，用于验证 stabby ABI 通路：日志回调、`execute`、`validate_params`、
-以及 **`common` + `groups` 两层配置**的完整示范。业务上不做实际上传，仅打印入参。
+## 能做什么
 
-## 2. 权限声明（access）
+演示两种互斥的工作模式：
 
-| 权限 | 取值 | 说明 |
+| 模式 | 说明 |
+|---|---|
+| 阿里云 OSS | 传到云上对象存储，需要填服务地址和密钥 |
+| 本地存储 | 存到本机某个目录，需要填目录和命名规则 |
+
+**这两种模式只能选一个。** 选了 OSS 就只需填 OSS 相关的参数，本地存储那几项完全不用管。
+
+## 什么时候用它
+
+- 想知道"多模式插件"的配置长什么样 —— 照着它的配置文件写
+- 想验证动态库插件能不能被正常加载
+- 自己写插件时，作为参数怎么分组、怎么加校验的参考
+
+正式环境不要用它，它不会真的上传文件。
+
+## 怎么配
+
+### 第一步：选模式
+
+先选「阿里云 OSS」还是「本地存储」。不选的话保存时会提示你必须选一个。
+
+### 选了「阿里云 OSS」
+
+要填四项：
+
+| 填什么 | 例子 | 说明 |
 |---|---|---|
-| `fs_read` | `true` | 示范用（`local` 分组需读本地目录） |
-| `fs_write` | `false` | 不写文件 |
-| `network` | `true` | 示范用（`oss` 分组需联网） |
+| Endpoint | `https://oss-cn-hangzhou.aliyuncs.com` | 必须以 http:// 或 https:// 开头 |
+| Bucket | `my-bucket` | 桶名，只能小写字母、数字和短横线，3–63 个字符 |
+| AccessKey ID | `LTAI5t...` | 访问凭证 ID |
+| AccessKey Secret | —— | 访问密钥，输入框会打码，保存后不再显示 |
 
-## 3. 分组（groups）
+另有一个「使用 HTTPS」开关，默认开着，一般不用动。
 
-本插件为**多形态插件**，运行态配置中 `group` 字段**必填**，且只能激活其中一个：
+### 选了「本地存储」
 
-| group | 标题 | 适用场景 |
+要填两项：
+
+| 填什么 | 例子 | 说明 |
 |---|---|---|
-| `oss` | 阿里云 OSS | 上传到阿里云对象存储，需 endpoint + 凭证 |
-| `local` | 本地存储 | 落地到本机目录，需根目录 + 命名策略 |
+| 存储根目录 | `/data/uploads` | 必须是绝对路径，也就是要以 `/` 开头 |
+| 命名策略 | UUID | 三种选一个，见下 |
 
-两者互斥：激活 `oss` 时 `local` 的参数不参与校验，反之亦然。
+**命名策略怎么选**
 
-## 4. 参数说明
-
-### 4.1 公共参数（common，两个分组都生效）
-
-| key | 标题 | 控件 | 必填 | 默认值 | 约束 | 说明 |
-|---|---|---|---|---|---|---|
-| `pass_type` | 允许上传的文件类型 | `select` 多选 | 否 | `[]` | `allow_custom` | 空 = 全部允许 |
-| `reject_type` | 不允许上传的文件类型 | `select` 多选 | 否 | `[]` | `allow_custom` | 空 = 不拦截 |
-| `retry_times` | 重试次数 | `number` | 否 | `3` | `0..=10`，整数 | 失败重试 |
-
-### 4.2 分组 `oss` 参数
-
-| key | 标题 | 控件 | 必填 | 默认值 | 约束 | 说明 |
-|---|---|---|---|---|---|---|
-| `endpoint` | Endpoint | `text` | **是** | `""` | 长度 8–256，须匹配 `^https?://.+` | OSS 服务地址 |
-| `bucket` | Bucket | `text` | **是** | `""` | 长度 3–63，须匹配桶名规则 | 存储桶名称 |
-| `access_key` | AccessKey ID | `text` | **是** | `""` | 长度 1–128 | 访问凭证 ID |
-| `access_secret` | AccessKey Secret | `text` **密码框** | **是** | `""` | 长度 1–256 | `secret: true`，前端不回显 |
-| `use_https` | 使用 HTTPS | `switch` | 否 | `true` | bool | 传输是否加密 |
-
-### 4.3 分组 `local` 参数
-
-| key | 标题 | 控件 | 必填 | 默认值 | 约束 | 说明 |
-|---|---|---|---|---|---|---|
-| `base_dir` | 存储根目录 | `text` | **是** | `/tmp/uploads` | 长度 1–512，须以 `/` 开头 | 落地绝对路径 |
-| `dir_mode` | 目录权限 | `number` | 否 | `493` | `0..=511`，整数 | 十进制表示的八进制值（755 → 493） |
-| `overwrite` | 允许覆盖 | `switch` | 否 | `false` | bool | 同名文件是否覆盖 |
-| `naming` | 命名策略 | `select` 单选 | **是** | `uuid` | **非** `allow_custom`，只能取 `origin`/`uuid`/`hash` | 落地命名方式 |
-
-## 5. 运行态配置示例
-
-激活 `oss`：
-
-```json
-{
-  "group": "oss",
-  "pass_type": ["image/*"],
-  "retry_times": 3,
-  "endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
-  "bucket": "my-bucket",
-  "access_key": "AK...",
-  "access_secret": "SK...",
-  "use_https": true
-}
-```
-
-激活 `local`：
-
-```json
-{
-  "group": "local",
-  "retry_times": 1,
-  "base_dir": "/tmp/uploads",
-  "dir_mode": 493,
-  "overwrite": false,
-  "naming": "uuid"
-}
-```
-
-## 6. 输入 / 输出契约
-
-**读取 `UploadInputCtxS`**（经 `convert_input_ctx` 转为原生 ctx 后访问）
-- `config_info`：JSON 字符串跨 ABI 传递，转换后可用 `config_util::get_*` / `get_group` 读取
-- 其余字段仅打印，不做业务处理
-
-**写出 `UploadOutputCtxS`**
-- 恒定 `Success`，`message = "成功"`，`file` / `extra_info` 均为 `None`
-
-## 7. 校验规则
-
-**框架声明式校验**：`group` 存在性与合法性、各参数的 required / 长度 / 正则 / 数值范围 /
-`naming` 的候选项合法性。
-
-**插件 `validate_params`（业务级）**：校验 `group` 只能是 `oss` 或 `local`，缺失或未知则返回错误信息。
-
-## 8. 错误与排错
-
-| 错误信息 | 原因 | 处理建议 |
+| 选项 | 落地后的文件名 | 什么时候用 |
 |---|---|---|
-| `缺少分组标识 group` | 未传 `group` | 补上 `"group": "oss"` 或 `"local"` |
-| `未知分组 'xxx'` | `group` 值不在声明内 | 只能用 `oss` / `local` |
-| `[oss.endpoint] 必填项未填` | 激活 `oss` 但缺 endpoint | 补齐该分组必填项 |
-| `[local.naming] 值不在候选项内` | `naming` 传了非法值 | 改为 `origin`/`uuid`/`hash` |
-| `Load dylib failed` | 产物缺失或 ABI 不匹配 | `cargo build --workspace` 全量重编 |
-| `Failed to read plugin.id` | 产物同目录缺 `plugin.id` | 检查 `build.rs` 复制是否成功 |
+| 原始文件名 | 用户传什么就叫什么 | 需要保留原名，且能接受重名冲突 |
+| UUID（默认） | 随机唯一名字 | 绝大多数场景，不会重名 |
+| 内容哈希 | 按文件内容算出的名字 | 想让相同内容的文件自动去重 |
 
-## 9. 变更记录
+另有「目录权限」和「允许覆盖」两项，一般用默认值。
+「允许覆盖」默认关着 —— 遇到同名文件不会覆盖，配合 UUID 命名基本不会遇到。
 
-- 0.0.1 初始版本；配置升级为 `common` + `groups` 两层，新增 `validate_params` 与四类控件示范
+### 两种模式都要填的
 
----
+「重试次数」：失败后重试几次，默认 3 次，可填 0–10。填 0 表示不重试。
 
-## 附：构建产物
+「允许上传的文件类型」和「不允许上传的文件类型」：留空表示不做限制。
 
-`build.rs` 会把 `meta.json`、`config.json`、`plugin.id`、`README.md` 复制到与
-`libuploader_example_plugin.dylib` 相同的目录（`target/<profile>/`），
-供 `UploadPluginInfo::new_from_dylib_path` 通过 `parent()` 定位资源。
+## 参数一览
 
-> **注意**：`UploadDylibPlugin` trait 每次新增方法都会改变 stabby vtable 布局，
-> 旧产物与新宿主不兼容，必须 `cargo build --workspace` 一并重编。
+**两种模式都生效**
+
+| 参数 | 作用 | 默认 |
+|---|---|---|
+| 允许上传的文件类型 | 白名单，留空为全收 | 空 |
+| 不允许上传的文件类型 | 黑名单，留空为不拦 | 空 |
+| 重试次数 | 失败后重试几次（0–10） | 3 |
+
+**仅「阿里云 OSS」模式**
+
+| 参数 | 必填 | 默认 |
+|---|---|---|
+| Endpoint | 是 | 无 |
+| Bucket | 是 | 无 |
+| AccessKey ID | 是 | 无 |
+| AccessKey Secret | 是 | 无 |
+| 使用 HTTPS | 否 | 开 |
+
+**仅「本地存储」模式**
+
+| 参数 | 必填 | 默认 |
+|---|---|---|
+| 存储根目录 | 是 | `/tmp/uploads` |
+| 命名策略 | 是 | UUID |
+| 目录权限 | 否 | 755 |
+| 允许覆盖 | 否 | 关 |
+
+## 常见问题
+
+**保存时提示"缺少分组标识"**
+
+没选工作模式。先选「阿里云 OSS」或「本地存储」。
+
+**切换模式后，之前填的参数还在吗？**
+
+不生效了。比如从 OSS 切到本地存储，OSS 那几项就不再参与校验，也不会被用到。
+切回去时需要重新确认一遍。
+
+**提示 Endpoint 格式不对**
+
+必须是完整网址，要带 `https://` 前缀。只填 `oss-cn-hangzhou.aliyuncs.com` 是不行的。
+
+**提示 Bucket 名字不合法**
+
+桶名规则：只能用小写字母、数字、短横线，长度 3–63，且首尾必须是字母或数字。
+大写字母、下划线、点号都不行。
+
+**AccessKey Secret 填完看不见了**
+
+正常，这是密码类型的输入框，保存后不回显。要改就重新填一遍。
+
+**「存储根目录」填了相对路径不行？**
+
+必须是绝对路径。写 `./uploads` 或 `uploads` 都会被拒，要写 `/data/uploads` 这样的完整路径。
+
+**「目录权限」为什么默认是 493 这个奇怪的数字？**
+
+它是 `755` 的十进制写法。常用取值：`493`（=755，常规）、`511`（=777，全开放）、`448`（=700，仅自己可访问）。
+
+**它到底会不会真的上传文件？**
+
+不会。它只会把收到的配置打印到日志里，然后返回成功。这是个示例插件。
