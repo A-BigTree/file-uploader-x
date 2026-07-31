@@ -102,6 +102,11 @@ UploadInputCtx → 插件处理 → UploadOutputCtx
 | `failed(msg)` | 校验/处理失败，**中断 pipeline** |
 | `interrupt(msg)` | 主动中断 |
 
+**Upload 阶段产物约定**：上传类插件成功后应通过 `UploadFileData` 原生表达远程产物——
+把 `data_type` 改写为 `NetworkPath`、`input_path` 设为可公开访问的 URL；本地路径、object key、
+provider 等辅助信息只放进 `extra_info`。下游 Output 插件统一消费这个 `NetworkPath` 文件，
+不绑定某个上传插件的私有 key，从而保证上传器与输出器可自由组合。
+
 ### 1.5 Stabby ABI 兼容层
 
 Rust 原生类型经 `models/ctx_stabby.rs` 的 `*S` 结构体映射到 stabby 类型：
@@ -154,8 +159,8 @@ Rust 原生类型经 `models/ctx_stabby.rs` 的 `*S` 结构体映射到 stabby �
 | `README.md` | 否 | 使用说明书；**只记录路径不加载内容** |
 | `plugin.id` | dylib 必需 | 插件唯一 ID，由插件构建 CLI 生成 |
 
-`<phase>` 段约定：`input` → Input、`pre` → PreUpload、`upload` → Upload、`post` → PostUpload。
-Rust 侧模块目录对应 `input` / `pre_upload` / `upload` / `post_upload`。
+`<phase>` 段约定：`input` → Input、`pre` → PreUpload、`upload` → Upload、`post` → PostUpload、`output` → Output。
+Rust 侧模块目录对应 `input` / `pre_upload` / `upload` / `post_upload` / `output`。
 
 ### meta.json
 
@@ -853,11 +858,15 @@ pub trait PipelineCallback: Send + Sync {
 - 「常见问题」按真实排查顺序编写，给出可执行的定位步骤
 - **不要**写：输入输出契约、`ctx` 字段名、Rust 类型名、trait 方法、错误码表、变更记录、阶段枚举
 - 权限、所属阶段已在 `meta.json` / `config.json` 声明，README 不必重复
+- **安全**：含 `secret` 的参数（密钥、Token）绝不得出现在插件日志或错误消息中；
+  打印排错信息时只输出非敏感字段（状态码、object key 等）
 
 ### 7.4 范例
 
 - `file_uploader_plugins/resources/pre/upload_file_validator/README.md`
 - `file_uploader_plugins/resources/input/default_input_handler/README.md`
+- `file_uploader_plugins/resources/upload/common_uploader/README.md`（多形态：Cloudflare R2）
+- `file_uploader_plugins/resources/output/common_output/README.md`
 - `uploader_example_plugin/README.md`（多形态插件）
 
 ---
