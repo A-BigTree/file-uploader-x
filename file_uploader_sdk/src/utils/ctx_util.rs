@@ -85,7 +85,6 @@ pub fn convert_input_ctx(input: &UploadInputCtxS) -> UploadInputCtx {
             || Arc::new(None),
         ),
         extra_info,
-        related_process_info: None,
         work_dir: input.work_dir.match_ref(|s| Some(s.clone().into()), || None),
     }
 }
@@ -146,7 +145,6 @@ mod work_dir_tests {
             ))),
             config_info: Arc::new(None),
             extra_info: None,
-            related_process_info: None,
             work_dir: wd.map(String::from),
         }
     }

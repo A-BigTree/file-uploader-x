@@ -79,7 +79,7 @@ Input → PreUpload → Upload → PostUpload → Output
 ### 数据流
 
 ```
-UploadTaskCtx → UploadProcessCtx → UploadInputCtx → [插件处理] → UploadOutputCtx
+UploadInputCtx → [插件处理] → UploadOutputCtx
 ```
 
 每个插件的输出会被转换为下一个插件的输入（`output_to_input`），`extra_info` 会累积传递。
