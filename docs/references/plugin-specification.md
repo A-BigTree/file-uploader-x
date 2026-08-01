@@ -142,6 +142,38 @@ Rust 原生类型经 `models/ctx_stabby.rs` 的 `*S` 结构体映射到 stabby �
 
 > **安全**：不要整体序列化 `ctx` 打日志 —— 会泄漏 `secret: true` 字段的值。只打印必要的非敏感字段。
 
+### 1.7 进程内插件目录入口（catalog）
+
+进程内插件经**显式清单**登记（新增插件的唯一注册点）：
+
+```rust
+// file_uploader_plugins
+pub struct InProcessEntry {
+    pub resource_subdir: &'static str,           // 如 "input/default_input_handler"
+    pub factory: fn() -> Arc<dyn UploadPlugin>,
+}
+pub fn list_in_process_plugins() -> &'static [InProcessEntry];
+```
+
+`file_uploader_core::pipeline::in_process_catalog` 提供两个面向上层的入口能力：
+
+| 能力 | API | 返回 |
+|---|---|---|
+| 列出所有进程内插件信息 | `InProcessPluginCatalog::list()` / 全局 `list_in_process_plugins()` | `&[PluginInfoSummary]`（id + meta + config + readme_path，**不可 execute**） |
+| 按 ID 取插件实现对象 | `InProcessPluginCatalog::get(id)` / 全局 `get_in_process_plugin(id)` | `Option<Arc<dyn UploadPlugin>>` |
+
+- `InProcessPluginCatalog::load_default()` 用编译期资源根加载；`load_from(path)` 可自定义根（测试/定制）。
+- `get` 返回的对象 **per-id 单例复用**（`OnceLock` 缓存），但 **`on_load` / `on_unload` 由调用方显式管理**，catalog 不自动调用。
+- 查找 key（id）沿用 [§2 插件 ID 生成](#插件-id-生成) 的进程内规则。
+
+```rust
+// 上层一行调用
+for p in file_uploader_core::list_in_process_plugins()? {
+    println!("{}: {} ({:?})", p.id, p.meta.title, p.meta.phase);
+}
+let plugin = file_uploader_core::get_in_process_plugin("in_process_Input_default_input_handler")?;
+```
+
 ---
 
 ## 2. 资源目录与 meta.json
@@ -200,6 +232,8 @@ Rust 侧模块目录对应 `input` / `pre_upload` / `upload` / `post_upload` / `
 | 动态库 | 读取产物同目录 `plugin.id` 文件内容（trim） | `dylib_uploader_test_example_plugin_20260616_0001` |
 
 注意进程内 ID 用 `{:?}` 格式化 phase，得到的是 `PreUpload` 这类大驼峰形态。
+
+> 进程内插件目录入口（§1.7）的 `list` / `get` 沿用此 ID 规则作为查找 key。
 
 ### `UploadPluginInfo`
 
@@ -886,6 +920,10 @@ target/debug/resources/pre/upload_file_validator/{meta,config}.json + README.md
 新增插件自动覆盖，无需改 `build.rs`。`cargo:rerun-if-changed=resources` 已覆盖整树。
 
 > **易踩**：改的是源 `resources/`，运行时读的是 `target/.../resources/` 副本 —— 改完要重新 build。
+
+`build.rs` 另注入 `cargo:rustc-env=FILE_UPLOADER_RESOURCES_DIR=<target>/<profile>/resources`，
+由 `file_uploader_plugins::resources_root() -> &'static str` 暴露，
+供 `InProcessPluginCatalog::load_default()` 定位资源根（避免宿主硬编码 `target/debug`）。
 
 ### 8.2 动态库插件
 
