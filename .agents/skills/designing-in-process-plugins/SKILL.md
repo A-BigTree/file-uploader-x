@@ -30,6 +30,7 @@ description: Use when creating, implementing, or refactoring an in-process plugi
 | `file_uploader_plugins/src/<phase_dir>/<name>.rs` | 是 | `impl UploadPlugin` |
 | `file_uploader_plugins/src/<phase_dir>.rs` | 是 | `pub mod <name>;` |
 | `file_uploader_plugins/build.rs` | 已存在 | 递归复制 `resources/` 整树（新增插件自动覆盖） |
+| `file_uploader_plugins/src/lib.rs` | 新增插件必须 | 在 `list_in_process_plugins()` 登记 `InProcessEntry`（否则不被 catalog 发现） |
 
 `<phase>` 段：`input`→Input、`pre`→PreUpload、`upload`→Upload、`post`→PostUpload。
 
@@ -289,7 +290,22 @@ match config_util::get_group(&ctx.config_info).as_deref() {
 `file_uploader_plugins/src/<phase_dir>.rs` 加 `pub mod <name>;`。
 `<phase_dir>` ∈ `input` / `pre_upload` / `upload` / `post_upload`。
 
-### 9. README.md（可选但强烈建议）
+### 9. 登记到进程内插件清单
+
+`file_uploader_plugins/src/lib.rs` 的 `list_in_process_plugins()` 末尾追加一条 `InProcessEntry`：
+
+```rust
+InProcessEntry {
+    resource_subdir: "pre/size_limiter",   // <phase 短名>/<name>，与资源目录一致
+    factory: || -> Arc<dyn UploadPlugin> { Arc::new(SizeLimiter) },
+},
+```
+
+- `resource_subdir` 必须与 `resources/<phase>/<name>` 实际目录一致
+- `factory` 闭包必须带显式返回类型 `-> Arc<dyn UploadPlugin>`（否则无法 coerce 为 fn 指针）
+- **不登记则不会被 `InProcessPluginCatalog` 发现**，上层「列出 / 按 ID 取」拿不到该插件
+
+### 10. README.md（可选但强烈建议）
 
 **定位：面向配置者的使用说明书，不是开发文档。**
 读者是「要用这个插件的人」，关心「这插件能帮我做什么、参数怎么填、填完会发生什么」。
@@ -315,7 +331,7 @@ match config_util::get_group(&ctx.config_info).as_deref() {
 - **不要**写：输入输出契约、`ctx` 字段名、Rust 类型名、trait 方法、错误码表、变更记录、阶段枚举
 - 权限、所属阶段已在 `meta.json` / `config.json` 声明，README 不必重复
 
-### 10. 测试（TDD）
+### 11. 测试（TDD）
 
 单元测试置于插件文件内 `#[cfg(test)] mod tests`。构造 `UploadInputCtx`（含 `config_info` / `file` / `work_dir`），
 断言 `execute` 与 `validate_params` 输出。
@@ -331,7 +347,7 @@ match config_util::get_group(&ctx.config_info).as_deref() {
 
 参考 `upload_file_validator.rs` 的测试组织。
 
-### 11. 注册到 pipeline
+### 12. 注册到 pipeline
 
 ```rust
 use file_uploader_core::pipeline::plugin::UploadPluginInfo;
@@ -416,6 +432,7 @@ let out = table.execute_pipeline(input_ctx, None);
 - [ ] 日志不整体序列化 ctx（避免泄漏 `secret` 字段）
 - [ ] 读写中间文件走 `fs_util`（不直接用 `std::fs`）
 - [ ] `src/<phase_dir>.rs` 注册 `pub mod <name>;`
+- [ ] 已在 `list_in_process_plugins()` 追加 `InProcessEntry`（`resource_subdir` 与资源目录路径一致）
 
 **测试与接入**
 - [ ] 单测覆盖：正常路径、`file` 为 None、`config_info` 为 None、各参数边界、`validate_params` 各分支、各分组
