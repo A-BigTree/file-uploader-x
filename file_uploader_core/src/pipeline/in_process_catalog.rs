@@ -112,6 +112,8 @@ mod tests {
     use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
     use file_uploader_sdk::models::enums::{OutputResultType, UploadPhase};
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::path::PathBuf;
+    use file_uploader_plugins::resources_root;
 
     // factory 必须是非捕获 fn 指针，故 on_load 计数用 static 共享状态
     static MOCK_LOAD_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -137,11 +139,16 @@ mod tests {
         }
     }
 
+    static DIR_COUNTER: AtomicU32 = AtomicU32::new(0);
+
     /// 在临时目录下造一个只含 meta.json 的资源子目录，返回资源根。
+    /// 目录名含进程 id + 自增计数，保证并发测试互不干扰。
     fn make_tmp_resource_root(subdir: &str, name: &str, phase: &str) -> std::path::PathBuf {
+        let n = DIR_COUNTER.fetch_add(1, Ordering::SeqCst);
         let root = std::env::temp_dir().join(format!(
-            "fux_catalog_{}_{}",
+            "fux_catalog_{}_{}_{}",
             std::process::id(),
+            n,
             subdir.replace('/', "_")
         ));
         let dir = root.join(subdir);
@@ -222,5 +229,67 @@ mod tests {
         );
         assert!(res.is_err(), "missing meta.json should be a hard failure");
         let _ = std::fs::remove_dir_all(&empty_root);
+    }
+
+    // ==================== 集成测试（依赖真实 target/<profile>/resources） ====================
+
+    fn target_resources_root() -> PathBuf {
+        PathBuf::from(resources_root())
+    }
+
+    #[test]
+    fn load_default_lists_real_builtins() {
+        let root = target_resources_root();
+        if !root.join("input/default_input_handler").exists() {
+            eprintln!("skip: {} not ready yet", root.display());
+            return;
+        }
+        let cat = InProcessPluginCatalog::load_default().expect("load_default should succeed");
+        let ids: Vec<&str> = cat.list().iter().map(|s| s.id.as_str()).collect();
+        assert!(
+            ids.iter().any(|id| id.ends_with("default_input_handler")),
+            "should include default_input_handler, got: {ids:?}"
+        );
+        assert!(
+            ids.iter().any(|id| id.ends_with("upload_file_validator")),
+            "should include upload_file_validator, got: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn load_default_get_returns_real_executable_plugin() {
+        let root = target_resources_root();
+        if !root.join("input/default_input_handler").exists() {
+            eprintln!("skip: {} not ready yet", root.display());
+            return;
+        }
+        let cat = InProcessPluginCatalog::load_default().expect("load_default");
+        let id = "in_process_Input_default_input_handler";
+        let plugin = cat.get(id).expect("default_input_handler should be present");
+        assert_eq!(plugin.name(), "default_input_handler");
+        // execute 不 panic（空 ctx：file=None → success("no file")）
+        let ctx = UploadInputCtx {
+            file: None,
+            config_info: Arc::new(None),
+            extra_info: None,
+            work_dir: None,
+        };
+        let out = plugin.execute(&ctx);
+        assert!(matches!(out.result, OutputResultType::Success));
+    }
+
+    #[test]
+    fn global_functions_work_against_real_resources() {
+        let root = target_resources_root();
+        if !root.join("input/default_input_handler").exists() {
+            eprintln!("skip: {} not ready yet", root.display());
+            return;
+        }
+        let listed = super::list_in_process_plugins().expect("global list should succeed");
+        assert!(!listed.is_empty());
+        let got = super::get_in_process_plugin("in_process_Input_default_input_handler")
+            .expect("global get should succeed")
+            .expect("plugin should exist");
+        assert_eq!(got.name(), "default_input_handler");
     }
 }
