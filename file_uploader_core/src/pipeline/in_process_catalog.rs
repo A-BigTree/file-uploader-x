@@ -82,6 +82,30 @@ impl InProcessPluginCatalog {
     }
 }
 
+/// 全局 catalog 单例（首次成功 load_default 后固定；失败则下次重试）。
+static GLOBAL_CATALOG: OnceLock<InProcessPluginCatalog> = OnceLock::new();
+
+fn ensure_catalog() -> Result<&'static InProcessPluginCatalog, UploadError> {
+    if let Some(c) = GLOBAL_CATALOG.get() {
+        return Ok(c);
+    }
+    let c = InProcessPluginCatalog::load_default()?; // 失败则不 set，下次调用重试
+    let _ = GLOBAL_CATALOG.set(c); // 竞态由 OnceLock 收敛
+    Ok(GLOBAL_CATALOG
+        .get()
+        .expect("GLOBAL_CATALOG must be set after successful load"))
+}
+
+/// 列出所有内置进程内插件概要（首次调用触发 load_default）。
+pub fn list_in_process_plugins() -> Result<&'static [PluginInfoSummary], UploadError> {
+    Ok(ensure_catalog()?.list())
+}
+
+/// 按 id 取进程内插件实现对象（首次调用触发 load_default）。
+pub fn get_in_process_plugin(id: &str) -> Result<Option<Arc<dyn UploadPlugin>>, UploadError> {
+    Ok(ensure_catalog()?.get(id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
