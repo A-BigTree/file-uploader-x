@@ -34,14 +34,16 @@ fn compile_patterns(items: &[String]) -> Vec<Pattern> {
         .collect()
 }
 
-/// 三维度保留判定：
-/// (pass_type 空 ∨ 命中) ∧ (未命中 reject_type) ∧ (pass_name 空 ∨ 命中) ∧ (size 不超限)
+/// 保留判定：
+/// (pass_type 空 ∨ 命中) ∧ (未命中 reject_type) ∧ (pass_name 空 ∨ 命中)
+/// ∧ (size 不超限) ∧ (strict_mode 关 ∨ file_type 非空)
 fn keep(
     f: &UploadFileData,
     pass_type: &[Pattern],
     reject_type: &[Pattern],
     pass_name: &[Pattern],
     max_size: Option<u64>,
+    strict_mode: bool,
 ) -> bool {
     let type_ok = pass_type.is_empty() || pass_type.iter().any(|p| p.matches(&f.file_type));
     let reject_ok = !reject_type.iter().any(|p| p.matches(&f.file_type));
@@ -50,7 +52,8 @@ fn keep(
         Some(m) if m > 0 => (f.size as u64) <= m,
         _ => true,
     };
-    type_ok && reject_ok && name_ok && size_ok
+    let strict_ok = !strict_mode || !f.file_type.trim().is_empty();
+    type_ok && reject_ok && name_ok && size_ok && strict_ok
 }
 
 impl UploadPlugin for UploadFileValidator {
@@ -72,22 +75,52 @@ impl UploadPlugin for UploadFileValidator {
             return UploadOutputCtx::failed("upload_file_validator: no file to validate");
         };
 
-        let (pass_type_raw, reject_type_raw, pass_name_raw, max_size) = parse_config(&ctx.config_info);
+        let (pass_type_raw, reject_type_raw, pass_name_raw, max_size) =
+            parse_config(&ctx.config_info);
+        let strict_mode =
+            config_util::get_bool(&ctx.config_info, "strict_mode").unwrap_or(false);
         let pass_type = compile_patterns(&pass_type_raw);
         let reject_type = compile_patterns(&reject_type_raw);
         let pass_name = compile_patterns(&pass_name_raw);
 
-        if keep(f, &pass_type, &reject_type, &pass_name, max_size) {
+        if keep(
+            f,
+            &pass_type,
+            &reject_type,
+            &pass_name,
+            max_size,
+            strict_mode,
+        ) {
             UploadOutputCtx::success_file(
                 "upload_file_validator: accepted".to_string(),
                 f.clone(),
             )
         } else {
             UploadOutputCtx::failed(format!(
-                "upload_file_validator: rejected (pass_type={:?}, reject_type={:?}, pass_name={:?}, max_size={:?})",
-                pass_type_raw, reject_type_raw, pass_name_raw, max_size
+                "upload_file_validator: rejected (pass_type={:?}, reject_type={:?}, pass_name={:?}, max_size={:?}, strict_mode={})",
+                pass_type_raw, reject_type_raw, pass_name_raw, max_size, strict_mode
             ))
         }
+    }
+
+    /// 业务级入参校验：
+    /// 1. `max_size` 非空时必须可被 `parse_size` 解析
+    /// 2. 三个 glob 列表的每一项都必须是合法模式
+    fn validate_params(&self, ctx: &UploadInputCtx) -> Result<(), String> {
+        if let Some(raw) = config_util::get_str(&ctx.config_info, "max_size") {
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() && config_util::parse_size(trimmed).is_none() {
+                return Err(format!("max_size 无法解析: '{raw}'"));
+            }
+        }
+
+        for key in ["pass_type", "reject_type", "pass_name"] {
+            for p in config_util::get_list(&ctx.config_info, key) {
+                Pattern::new(&p).map_err(|e| format!("{key} 含非法 glob '{p}': {e}"))?;
+            }
+        }
+
+        Ok(())
     }
 
     fn on_load(&self) {
@@ -121,7 +154,6 @@ mod tests {
             file: f,
             config_info: Arc::new(config),
             extra_info: None,
-            related_process_info: None,
             work_dir: None,
         };
         UploadFileValidator.execute(&ctx)
@@ -244,5 +276,82 @@ mod tests {
         let plugin = UploadFileValidator;
         plugin.on_load();
         plugin.on_unload();
+    }
+
+    // ---- strict_mode ----
+
+    #[test]
+    fn strict_mode_rejects_empty_file_type() {
+        let f = file("a.bin", "", 1);
+        let cfg = serde_json::json!({"strict_mode": true});
+        assert!(matches!(
+            run(Some(f), Some(cfg)).result,
+            OutputResultType::Failed
+        ));
+    }
+
+    #[test]
+    fn strict_mode_off_accepts_empty_file_type() {
+        let f = file("a.bin", "", 1);
+        let cfg = serde_json::json!({"strict_mode": false});
+        assert!(matches!(
+            run(Some(f), Some(cfg)).result,
+            OutputResultType::Success
+        ));
+    }
+
+    #[test]
+    fn strict_mode_accepts_known_file_type() {
+        let f = file("a.png", "image/png", 1);
+        let cfg = serde_json::json!({"strict_mode": true});
+        assert!(matches!(
+            run(Some(f), Some(cfg)).result,
+            OutputResultType::Success
+        ));
+    }
+
+    // ---- validate_params ----
+
+    fn validate(config: Option<Value>) -> Result<(), String> {
+        let ctx = UploadInputCtx {
+            file: None,
+            config_info: Arc::new(config),
+            extra_info: None,
+            work_dir: None,
+        };
+        UploadFileValidator.validate_params(&ctx)
+    }
+
+    #[test]
+    fn validate_params_accepts_valid_config() {
+        let cfg = serde_json::json!({
+            "pass_type": ["image/*", "application/pdf"],
+            "reject_type": [],
+            "pass_name": ["*.png"],
+            "max_size": "10mb"
+        });
+        assert!(validate(Some(cfg)).is_ok());
+        assert!(validate(None).is_ok());
+    }
+
+    #[test]
+    fn validate_params_rejects_unparsable_max_size() {
+        let cfg = serde_json::json!({"max_size": "10 exabytes"});
+        let err = validate(Some(cfg)).unwrap_err();
+        assert!(err.contains("max_size"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_params_allows_empty_max_size() {
+        assert!(validate(Some(serde_json::json!({"max_size": ""}))).is_ok());
+        assert!(validate(Some(serde_json::json!({"max_size": "0"}))).is_ok());
+    }
+
+    #[test]
+    fn validate_params_rejects_invalid_glob() {
+        let cfg = serde_json::json!({"pass_name": ["a[b"]});
+        let err = validate(Some(cfg)).unwrap_err();
+        assert!(err.contains("pass_name"), "got: {err}");
+        assert!(err.contains("a[b"), "got: {err}");
     }
 }

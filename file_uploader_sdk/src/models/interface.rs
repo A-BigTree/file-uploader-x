@@ -15,6 +15,17 @@ pub trait UploadPlugin: Send + Sync + 'static {
     fn on_load(&self) {}
     /// Called when the plugin is unloaded
     fn on_unload(&self) {}
+
+    /// **入参校验**
+    ///
+    /// 在框架声明式约束（config.json 的 required / 长度 / 正则 / 范围等）
+    /// 校验通过之后调用，用于插件自身的业务级校验。
+    ///
+    /// 只需读取 `ctx.config_info`（可配合 `utils::config_util` 的 `get_*` 系列）。
+    /// 返回 `Err(msg)` 表示校验失败，默认实现直接通过。
+    fn validate_params(&self, _ctx: &UploadInputCtx) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// **Plugin in dylib**
@@ -41,7 +52,30 @@ pub trait UploadDylibPlugin: Send + Sync {
     ///     set_logger_callback(callback);
     /// }
     /// ```
-    extern "C" fn set_logger(&self, callback: PluginLogCallback) {}
+    extern "C" fn set_logger(&self, _callback: PluginLogCallback) {}
+
+    /// **入参校验**
+    ///
+    /// 在框架声明式约束校验通过之后调用，用于插件自身的业务级校验。
+    /// 返回 `Some(msg)` 表示校验失败，`None` 表示通过；默认实现直接通过。
+    ///
+    /// # Example
+    /// ```ignore
+    /// extern "C" fn validate_params(&self, ctx: &UploadInputCtxS)
+    ///     -> stabby::option::Option<SString> {
+    ///     let ctx = convert_input_ctx(ctx);
+    ///     match config_util::get_group(&ctx.config_info).as_deref() {
+    ///         Some("oss") => stabby::option::Option::None(),
+    ///         _ => stabby::option::Option::Some("未知分组".to_string().into()),
+    ///     }
+    /// }
+    /// ```
+    extern "C" fn validate_params(
+        &self,
+        _ctx: &UploadInputCtxS,
+    ) -> stabby::option::Option<SString> {
+        stabby::option::Option::None()
+    }
 }
 
 /// **Export dylib plugin**

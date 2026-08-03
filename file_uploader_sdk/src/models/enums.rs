@@ -17,40 +17,6 @@ pub enum UploadPhase {
     Output,
 }
 
-/// Task status
-#[derive(Serialize, Deserialize, Debug)]
-#[stabby::stabby]
-#[repr(u8)]
-pub enum UploadTaskStatus {
-    // Initialization
-    Init,
-    // Running
-    Running,
-    // Paused
-    Pause,
-    // Completed
-    Complete,
-    // Failed
-    Failed,
-}
-
-/// Process status
-#[derive(Serialize, Deserialize, Debug)]
-#[stabby::stabby]
-#[repr(u8)]
-pub enum UploadProcessStatus {
-    // Waiting
-    Wait,
-    // 初始化
-    Init,
-    // 执行中
-    Running,
-    // 完成
-    Complete,
-    // 失败
-    Failed,
-}
-
 /// 文件输入数据类型
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[stabby::stabby]

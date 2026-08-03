@@ -4,30 +4,43 @@
     "fs_write": true,
     "network": true
   },
-  "params": [
+  "common": [
     {
       "key": "cache_local",
       "title": "缓存本地文件",
-      "description": "是否将本地文件拷贝一份到工作目录（true/false），默认 true",
+      "description": "是否将本地文件拷贝一份到工作目录，默认开启",
       "config_type": "Default",
-      "default_value": "true",
-      "form": { "type": "text" }
+      "default_value": true,
+      "required": false,
+      "form": { "type": "switch" }
     },
     {
       "key": "download_network",
       "title": "下载网络文件",
-      "description": "是否默认下载网络文件到工作目录（true/false），默认 true；关闭则保留 URL 供下游自定义下载",
+      "description": "是否下载网络文件到工作目录；关闭则保留 URL 供下游自定义下载",
       "config_type": "Default",
-      "default_value": "true",
-      "form": { "type": "text" }
+      "default_value": true,
+      "required": false,
+      "form": { "type": "switch" }
     },
     {
       "key": "sniff_type",
       "title": "嗅探文件类型",
-      "description": "是否用魔数嗅探填充 file_type(MIME)（true/false），默认 true",
+      "description": "是否用魔数嗅探填充 file_type(MIME)",
       "config_type": "Default",
-      "default_value": "true",
-      "form": { "type": "text" }
+      "default_value": true,
+      "required": false,
+      "form": { "type": "switch" }
+    },
+    {
+      "key": "download_timeout_secs",
+      "title": "下载超时(秒)",
+      "description": "网络文件下载的超时秒数，缺省 30",
+      "config_type": "Default",
+      "default_value": 30,
+      "required": false,
+      "form": { "type": "number", "min": 1, "max": 3600, "step": 1, "integer": true }
     }
-  ]
+  ],
+  "groups": []
 }

@@ -35,6 +35,8 @@ fn main() {
     let src = std::path::PathBuf::from(&manifest_dir).join("resources");
     let dst = target_dir.join("resources");
 
+    println!("cargo:rustc-env=FILE_UPLOADER_RESOURCES_DIR={}", dst.display());
+
     if src.exists() {
         copy_dir_recursive(&src, &dst);
     } else {

@@ -71,6 +71,29 @@ pub fn get_size(config: &Arc<Option<Value>>, key: &str) -> Option<u64> {
     }
 }
 
+/// 读取运行态激活的分组标识（保留字段 `group`）。
+pub fn get_group(config: &Arc<Option<Value>>) -> Option<String> {
+    get_str(config, crate::utils::validate_util::GROUP_KEY)
+}
+
+/// 读取浮点数值。
+pub fn get_f64(config: &Arc<Option<Value>>, key: &str) -> Option<f64> {
+    config
+        .as_ref()
+        .as_ref()
+        .and_then(|v| v.get(key))
+        .and_then(|v| v.as_f64())
+}
+
+/// 读取整数值。
+pub fn get_i64(config: &Arc<Option<Value>>, key: &str) -> Option<i64> {
+    config
+        .as_ref()
+        .as_ref()
+        .and_then(|v| v.get(key))
+        .and_then(|v| v.as_i64())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +211,29 @@ mod tests {
         assert_eq!(super::get_size(&none_cfg, "max"), None);
         let c = cfg(r#"{"max":"abc"}"#);
         assert_eq!(super::get_size(&c, "max"), None);
+    }
+
+    #[test]
+    fn get_group_present_and_missing() {
+        let c = cfg(r#"{"group":"oss","endpoint":"x"}"#);
+        assert_eq!(get_group(&c), Some("oss".to_string()));
+
+        let c2 = cfg(r#"{"endpoint":"x"}"#);
+        assert_eq!(get_group(&c2), None);
+
+        let none_cfg: Arc<Option<Value>> = Arc::new(None);
+        assert_eq!(get_group(&none_cfg), None);
+    }
+
+    #[test]
+    fn get_f64_and_i64() {
+        let c = cfg(r#"{"a":1.5,"b":3,"s":"x"}"#);
+        assert_eq!(get_f64(&c, "a"), Some(1.5));
+        assert_eq!(get_f64(&c, "b"), Some(3.0));
+        assert_eq!(get_i64(&c, "b"), Some(3));
+        // 浮点不能作为整数读取
+        assert_eq!(get_i64(&c, "a"), None);
+        assert_eq!(get_f64(&c, "s"), None);
+        assert_eq!(get_i64(&c, "missing"), None);
     }
 }

@@ -1,0 +1,132 @@
+{
+  "access": { "fs_read": true, "fs_write": false, "network": true },
+  "common": [
+    {
+      "key": "timeout_secs",
+      "title": "请求超时（秒）",
+      "description": "单次 HTTP 请求的超时秒数",
+      "config_type": "Default",
+      "default_value": 30,
+      "required": false,
+      "form": { "type": "number", "min": 1, "max": 3600, "step": 1, "integer": true }
+    },
+    {
+      "key": "retry_times",
+      "title": "失败重试次数",
+      "description": "单次上传或每个分片独立重试的次数",
+      "config_type": "Default",
+      "default_value": 2,
+      "required": false,
+      "form": { "type": "number", "min": 0, "max": 5, "step": 1, "integer": true }
+    },
+    {
+      "key": "naming",
+      "title": "对象命名方式",
+      "description": "上传后的对象键生成方式",
+      "config_type": "Default",
+      "default_value": "date_uuid",
+      "required": false,
+      "form": {
+        "type": "select",
+        "multiple": false,
+        "allow_custom": false,
+        "options": [
+          { "label": "原文件名", "value": "origin" },
+          { "label": "唯一名称", "value": "uuid" },
+          { "label": "内容哈希", "value": "hash" },
+          { "label": "日期目录 + 唯一名称", "value": "date_uuid" }
+        ]
+      }
+    },
+    {
+      "key": "key_prefix",
+      "title": "对象键前缀",
+      "description": "例如 uploads/，不得以 / 开头或包含 ..",
+      "config_type": "Default",
+      "default_value": "",
+      "required": false,
+      "form": { "type": "text", "secret": false, "max_len": 256 }
+    },
+    {
+      "key": "multipart_enabled",
+      "title": "启用分片上传",
+      "description": "开启后，大于分片大小的文件使用串行分片上传",
+      "config_type": "Default",
+      "default_value": true,
+      "required": false,
+      "form": { "type": "switch" }
+    },
+    {
+      "key": "multipart_part_size",
+      "title": "分片大小",
+      "description": "默认 64MB，范围 5MB 至 5GB",
+      "config_type": "Default",
+      "default_value": "64MB",
+      "required": false,
+      "form": { "type": "text", "secret": false, "min_len": 2, "max_len": 16 }
+    }
+  ],
+  "groups": [
+    {
+      "group": "r2",
+      "title": "Cloudflare R2",
+      "description": "上传到 Cloudflare R2 对象存储",
+      "params": [
+        {
+          "key": "account_id",
+          "title": "Account ID",
+          "description": "Cloudflare 账户 ID",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "secret": false, "min_len": 1, "max_len": 128 }
+        },
+        {
+          "key": "bucket",
+          "title": "Bucket",
+          "description": "R2 存储桶名称",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "secret": false, "min_len": 1, "max_len": 255 }
+        },
+        {
+          "key": "access_key_id",
+          "title": "Access Key ID",
+          "description": "R2 API Token 的 Access Key ID",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "secret": false, "min_len": 1, "max_len": 256 }
+        },
+        {
+          "key": "secret_access_key",
+          "title": "Secret Access Key",
+          "description": "R2 API Token 的密钥",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "secret": true, "min_len": 1, "max_len": 256 }
+        },
+        {
+          "key": "public_base_url",
+          "title": "公开访问域名",
+          "description": "例如 https://cdn.example.com",
+          "config_type": "Default",
+          "default_value": "",
+          "required": true,
+          "form": { "type": "text", "secret": false, "min_len": 1, "max_len": 2048 }
+        },
+        {
+          "key": "overwrite",
+          "title": "允许覆盖同名对象",
+          "description": "关闭时上传前检查对象是否存在",
+          "config_type": "Default",
+          "default_value": true,
+          "required": false,
+          "form": { "type": "switch" }
+        }
+      ]
+    }
+  ]
+}

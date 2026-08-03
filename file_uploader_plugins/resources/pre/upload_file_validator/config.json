@@ -4,17 +4,19 @@
     "fs_write": false,
     "network": false
   },
-  "params": [
+  "common": [
     {
       "key": "pass_type",
       "title": "允许类型",
       "description": "允许通过的文件类型(MIME)，为空表示全部允许，支持 glob 如 image/*",
       "config_type": "Custom",
       "default_value": [],
+      "required": false,
       "form": {
         "type": "select",
         "multiple": true,
         "allow_custom": true,
+        "max_items": 50,
         "options": [
           {"label": "图片(image/*)", "value": "image/*"},
           {"label": "PNG", "value": "image/png"},
@@ -35,10 +37,12 @@
       "description": "拦截的文件类型(MIME)，支持 glob；命中即剔除",
       "config_type": "Custom",
       "default_value": [],
+      "required": false,
       "form": {
         "type": "select",
         "multiple": true,
         "allow_custom": true,
+        "max_items": 50,
         "options": [
           {"label": "图片(image/*)", "value": "image/*"},
           {"label": "PDF", "value": "application/pdf"},
@@ -53,6 +57,7 @@
       "description": "允许通过的文件名 glob，为空表示全部允许，如 *.png、report-*",
       "config_type": "Custom",
       "default_value": [],
+      "required": false,
       "form": {
         "type": "select",
         "multiple": true,
@@ -65,9 +70,23 @@
       "description": "单文件最大体积，支持带单位如 1kb/1mb/1g；为 0 或空表示不限",
       "config_type": "Custom",
       "default_value": "0",
+      "required": false,
       "form": {
-        "type": "text"
+        "type": "text",
+        "max_len": 16,
+        "pattern": "^\\s*\\d+\\s*(?i:b|byte|bytes|k|kb|m|mb|g|gb|t|tb)?\\s*$",
+        "placeholder": "如 10mb"
       }
+    },
+    {
+      "key": "strict_mode",
+      "title": "严格模式",
+      "description": "开启后文件类型无法识别（file_type 为空）时直接拒绝",
+      "config_type": "Default",
+      "default_value": false,
+      "required": false,
+      "form": { "type": "switch" }
     }
-  ]
+  ],
+  "groups": []
 }

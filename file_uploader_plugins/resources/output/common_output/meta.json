@@ -1,0 +1,8 @@
+{
+  "name": "common_output",
+  "title": "通用输出器",
+  "description": "将网络路径文件格式化为 Markdown、HTML 或纯超链接，支持自定义模板",
+  "version": "0.0.1",
+  "author": "A-BigTree",
+  "phase": "Output"
+}

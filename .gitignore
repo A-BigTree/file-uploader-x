@@ -27,3 +27,4 @@ target/
 .agents/skills/*
 !.agents/skills/designing-in-process-plugins/
 skills-lock.json
+.codeflicker/
