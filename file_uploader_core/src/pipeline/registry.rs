@@ -470,6 +470,7 @@ mod tests {
             description: "Test plugin".to_string(),
             author: Some("test".to_string()),
             phase,
+            logo: None,
         });
 
         let plugin = std::sync::Arc::new(MockPlugin)
@@ -488,6 +489,7 @@ mod tests {
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             readme_path: None,
+            logo_path: None,
             slot,
         })
     }
@@ -741,6 +743,7 @@ mod tests {
             description: "Test plugin with load counter".to_string(),
             author: Some("test".to_string()),
             phase: UploadPhase::Upload,
+            logo: None,
         });
 
         let plugin1 = std::sync::Arc::new(MockPluginWithLoadCounter::new());
@@ -769,6 +772,7 @@ mod tests {
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             readme_path: None,
+            logo_path: None,
             slot: slot1,
         });
 
@@ -778,6 +782,7 @@ mod tests {
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             readme_path: None,
+            logo_path: None,
             slot: slot2,
         });
 
@@ -865,6 +870,7 @@ mod tests {
             description: "Fail plugin".to_string(),
             author: Some("test".to_string()),
             phase,
+            logo: None,
         });
         let plugin = std::sync::Arc::new(FailPlugin)
             as std::sync::Arc<dyn file_uploader_sdk::models::interface::UploadPlugin>;
@@ -881,6 +887,7 @@ mod tests {
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test/path".to_string(),
             readme_path: None,
+            logo_path: None,
             slot,
         })
     }
@@ -1049,6 +1056,7 @@ mod tests {
             description: "reads config".to_string(),
             author: None,
             phase: UploadPhase::Upload,
+            logo: None,
         });
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
@@ -1063,6 +1071,7 @@ mod tests {
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test".to_string(),
             readme_path: None,
+            logo_path: None,
             slot,
         });
 
@@ -1121,6 +1130,7 @@ mod tests {
             description: "capture work_dir".to_string(),
             author: None,
             phase: UploadPhase::Upload,
+            logo: None,
         });
         let slot = LazyPluginSlot {
             source: LazySlotSource::InProcess {
@@ -1135,6 +1145,7 @@ mod tests {
             config: Arc::new(PluginConfigInfo::default()),
             path: "/test".to_string(),
             readme_path: None,
+            logo_path: None,
             slot,
         });
         let reg = PluginRegistryInfo::new(info, 1, PluginRegistryStatus::Enable, None);
@@ -1161,6 +1172,7 @@ mod tests {
             description: "schema plugin".to_string(),
             author: None,
             phase: UploadPhase::Upload,
+            logo: None,
         });
         let config: PluginConfigInfo = serde_json::from_str(config_json).unwrap();
         let plugin = std::sync::Arc::new(CountingValidatePlugin::default())
@@ -1178,6 +1190,7 @@ mod tests {
             config: Arc::new(config),
             path: "/test".to_string(),
             readme_path: None,
+            logo_path: None,
             slot,
         })
     }
