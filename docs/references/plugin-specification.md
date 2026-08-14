@@ -159,7 +159,7 @@ pub fn list_in_process_plugins() -> &'static [InProcessEntry];
 
 | 能力 | API | 返回 |
 |---|---|---|
-| 列出所有进程内插件信息 | `InProcessPluginCatalog::list()` / 全局 `list_in_process_plugins()` | `&[PluginInfoSummary]`（id + meta + config + readme_path，**不可 execute**） |
+| 列出所有进程内插件信息 | `InProcessPluginCatalog::list()` / 全局 `list_in_process_plugins()` | `&[PluginInfoSummary]`（id + meta + config + readme_path + logo_path，**不可 execute**） |
 | 按 ID 取插件实现对象 | `InProcessPluginCatalog::get(id)` / 全局 `get_in_process_plugin(id)` | `Option<Arc<dyn UploadPlugin>>` |
 
 - `InProcessPluginCatalog::load_default()` 用编译期资源根加载；`load_from(path)` 可自定义根（测试/定制）。
@@ -215,6 +215,7 @@ Rust 侧模块目录对应 `input` / `pre_upload` / `upload` / `post_upload` / `
 | `version` | string | 是 | 语义化版本 |
 | `author` | string / null | 是 | 作者，可为 `null` |
 | `phase` | enum | 是 | `Input` / `PreUpload` / `Upload` / `PostUpload` / `Output`（大驼峰） |
+| `logo` | string / null | 否 | 插件 logo：**本地文件名**（与 `meta.json` / `README.md` 同目录，即插件资源目录）或**图片链接**（`http://` / `https://` 开头）。链接原样保留；本地文件存在则解析为绝对路径；缺失或字段缺省 → `logo_path = None`（静默，不报错不告警）。本项目内置插件与示例 dylib 插件均不添加此字段，仅作规范预留 |
 
 ### 插件资源加载（`PluginResource`）
 
@@ -223,6 +224,7 @@ Rust 侧模块目录对应 `input` / `pre_upload` / `upload` / `post_upload` / `
 1. `meta.json` —— 必读，缺失 → `UploadError::PluginLoadError`
 2. `config.json` —— 选读，缺失 → `PluginConfigInfo::default()`（空容器）
 3. `README.md` —— 选读，存在则记录路径到 `readme_path`，缺失 → `None`（不报错不告警）
+4. `meta.logo` —— 选读：`http(s)://` 链接原样存入 `logo_path`；本地文件名 join 资源目录后存在则记绝对路径、缺失 → `None`（静默不告警）
 
 ### 插件 ID 生成
 
@@ -237,7 +239,7 @@ Rust 侧模块目录对应 `input` / `pre_upload` / `upload` / `post_upload` / `
 
 ### `UploadPluginInfo`
 
-封装插件 ID、`meta`、`config`（`Arc<PluginConfigInfo>`）、加载路径 `path`、`readme_path`、`LazyPluginSlot`。
+封装插件 ID、`meta`、`config`（`Arc<PluginConfigInfo>`）、加载路径 `path`、`readme_path`、`logo_path`、`LazyPluginSlot`。
 
 两个构造入口共用 `PluginResource::load`：
 
