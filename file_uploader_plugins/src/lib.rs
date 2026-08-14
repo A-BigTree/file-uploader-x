@@ -42,7 +42,18 @@ pub fn list_in_process_plugins() -> &'static [InProcessEntry] {
                 Arc::new(pre_upload::upload_file_validator::UploadFileValidator)
             },
         },
-        // 后续 common_uploader / common_output 落地后在此追加
+        InProcessEntry {
+            resource_subdir: "upload/common_uploader",
+            factory: || -> Arc<dyn UploadPlugin> {
+                Arc::new(upload::common_uploader::CommonUploader)
+            },
+        },
+        InProcessEntry {
+            resource_subdir: "output/common_output",
+            factory: || -> Arc<dyn UploadPlugin> {
+                Arc::new(output::common_output::CommonOutput)
+            },
+        },
     ]
 }
 
@@ -63,7 +74,7 @@ mod tests {
     #[test]
     fn manifest_includes_known_builtin_plugins() {
         let entries = list_in_process_plugins();
-        assert!(entries.len() >= 2, "should list at least 2 builtin plugins");
+        assert!(entries.len() >= 4, "should list at least 4 builtin plugins");
 
         let subdirs: Vec<&str> = entries.iter().map(|e| e.resource_subdir).collect();
         assert!(
@@ -73,6 +84,14 @@ mod tests {
         assert!(
             subdirs.contains(&"pre/upload_file_validator"),
             "missing upload_file_validator, got: {subdirs:?}"
+        );
+        assert!(
+            subdirs.contains(&"upload/common_uploader"),
+            "missing common_uploader, got: {subdirs:?}"
+        );
+        assert!(
+            subdirs.contains(&"output/common_output"),
+            "missing common_output, got: {subdirs:?}"
         );
     }
 
