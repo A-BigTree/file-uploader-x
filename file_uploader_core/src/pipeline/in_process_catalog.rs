@@ -14,6 +14,7 @@ pub struct PluginInfoSummary {
     pub meta: Arc<PluginMeta>,
     pub config: Arc<PluginConfigInfo>,
     pub readme_path: Option<String>,
+    pub logo_path: Option<String>,
 }
 
 pub struct InProcessPluginCatalog {
@@ -43,6 +44,7 @@ impl InProcessPluginCatalog {
                 meta: resource.meta.clone(),
                 config: resource.config.clone(),
                 readme_path: resource.readme_path.clone(),
+                logo_path: resource.logo_path.clone(),
             });
             factories.insert(id.clone(), entry.factory);
             instances.insert(id, OnceLock::new());
@@ -254,6 +256,14 @@ mod tests {
             ids.iter().any(|id| id.ends_with("upload_file_validator")),
             "should include upload_file_validator, got: {ids:?}"
         );
+        assert!(
+            ids.iter().any(|id| id.ends_with("common_uploader")),
+            "should include common_uploader, got: {ids:?}"
+        );
+        assert!(
+            ids.iter().any(|id| id.ends_with("common_output")),
+            "should include common_output, got: {ids:?}"
+        );
     }
 
     #[test]
@@ -291,5 +301,31 @@ mod tests {
             .expect("global get should succeed")
             .expect("plugin should exist");
         assert_eq!(got.name(), "default_input_handler");
+    }
+
+    #[test]
+    fn summary_carries_logo_path_from_meta() {
+        let n = DIR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!("fux_logo_summary_{}_{}", std::process::id(), n));
+        let dir = root.join("input/mock_logo");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("meta.json"),
+            r#"{"name":"mock_logo","title":"M","description":"d","version":"0.0.1","author":null,"phase":"Input","logo":"https://example.com/x.png"}"#,
+        ).unwrap();
+        let cat = InProcessPluginCatalog::from_entries(
+            &[InProcessEntry {
+                resource_subdir: "input/mock_logo",
+                factory: || -> Arc<dyn UploadPlugin> { Arc::new(CountingMock) },
+            }],
+            &root,
+        )
+        .expect("from_entries should succeed");
+        assert_eq!(
+            cat.list()[0].logo_path.as_deref(),
+            Some("https://example.com/x.png"),
+            "summary should carry logo_path from meta"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
