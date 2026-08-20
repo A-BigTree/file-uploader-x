@@ -47,6 +47,8 @@ description: Use when creating, implementing, or refactoring an in-process plugi
 }
 ```
 
+可选字段 `logo`（本地文件名或 http/https 图片链接）预留为规范，本项目内置插件不加。
+
 `config.json` —— **三段结构**：`access`（权限）+ `common`（公共参数）+ `groups`（互斥分组）。
 
 **单形态插件**（绝大多数）：只写 `common`，`groups` 留空数组。

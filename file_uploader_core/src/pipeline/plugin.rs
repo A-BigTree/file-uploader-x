@@ -212,6 +212,9 @@ pub struct PluginMeta {
     pub author: Option<String>,
     // 插件执行阶段
     pub phase: UploadPhase,
+    // 插件 logo（可选）：本地文件名（与 meta.json 同目录）或图片链接（http/https）
+    #[serde(default)]
+    pub logo: Option<String>,
 }
 
 /// **插件资源（meta + config 加载结果）**
@@ -220,6 +223,8 @@ pub struct PluginResource {
     pub config: Arc<PluginConfigInfo>,
     /// README.md 路径引用（可选，仅记录路径不读取内容）
     pub readme_path: Option<String>,
+    /// logo 引用（可选）：http(s) 链接原样保留；本地文件解析为绝对路径；缺失 → None（静默）
+    pub logo_path: Option<String>,
 }
 
 impl PluginResource {
@@ -249,10 +254,26 @@ impl PluginResource {
             None
         };
 
+        let logo_path = match &meta.logo {
+            None => None,
+            Some(logo) if logo.starts_with("http://") || logo.starts_with("https://") => {
+                Some(logo.clone())
+            }
+            Some(file) => {
+                let p = dir.join(file);
+                if p.is_file() {
+                    Some(p.display().to_string())
+                } else {
+                    None // 本地文件缺失：静默，与 README 缺失语义一致
+                }
+            }
+        };
+
         Ok(PluginResource {
             meta: Arc::new(meta),
             config,
             readme_path,
+            logo_path,
         })
     }
 }
@@ -270,6 +291,8 @@ pub struct UploadPluginInfo {
     pub path: String,
     // README.md 路径引用（可选，不加载内容）
     pub readme_path: Option<String>,
+    // logo 引用（可选，不加载内容）
+    pub logo_path: Option<String>,
     // 插件插槽
     #[serde(skip)]
     pub slot: LazyPluginSlot,
@@ -298,6 +321,7 @@ impl UploadPluginInfo {
             config: resource.config,
             path: resource_dir.to_string(),
             readme_path: resource.readme_path,
+            logo_path: resource.logo_path,
             slot,
         })
     }
@@ -343,6 +367,7 @@ impl UploadPluginInfo {
             config: resource.config,
             path: dylib_path.to_string(),
             readme_path: resource.readme_path,
+            logo_path: resource.logo_path,
             slot,
         })
     }
@@ -547,6 +572,70 @@ mod tests {
         assert!(r.readme_path.is_none());
         assert!(r.config.common.is_empty());
 
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ==================== logo 解析 ====================
+
+    fn make_logo_tmp_dir(tag: &str, meta_json: &str) -> std::path::PathBuf {
+        let tmp = std::env::temp_dir().join(format!("fux_logo_{}_{}", tag, std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("meta.json"), meta_json).unwrap();
+        tmp
+    }
+
+    #[test]
+    fn test_plugin_resource_logo_absent_is_none() {
+        let tmp = make_logo_tmp_dir(
+            "absent",
+            r#"{"name":"t","title":"t","version":"0.0.1","description":"d","author":null,"phase":"PreUpload"}"#,
+        );
+        let r = PluginResource::load(&tmp).unwrap();
+        assert!(r.logo_path.is_none(), "no logo field => logo_path None");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_plugin_resource_logo_url_passthrough() {
+        let tmp = make_logo_tmp_dir(
+            "url",
+            r#"{"name":"t","title":"t","version":"0.0.1","description":"d","author":null,"phase":"PreUpload","logo":"https://example.com/a.png"}"#,
+        );
+        let r = PluginResource::load(&tmp).unwrap();
+        assert_eq!(
+            r.logo_path.as_deref(),
+            Some("https://example.com/a.png"),
+            "url logo should pass through as-is"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_plugin_resource_logo_local_file_resolved_absolute() {
+        let tmp = make_logo_tmp_dir(
+            "local",
+            r#"{"name":"t","title":"t","version":"0.0.1","description":"d","author":null,"phase":"PreUpload","logo":"logo.png"}"#,
+        );
+        std::fs::write(tmp.join("logo.png"), b"png-bytes").unwrap();
+        let r = PluginResource::load(&tmp).unwrap();
+        let logo = r.logo_path.expect("local existing logo => Some");
+        assert!(logo.ends_with("logo.png"), "got: {logo}");
+        assert!(
+            Path::new(&logo).is_absolute(),
+            "local logo should resolve to absolute path, got: {logo}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_plugin_resource_logo_local_missing_silent_none() {
+        let tmp = make_logo_tmp_dir(
+            "missing",
+            r#"{"name":"t","title":"t","version":"0.0.1","description":"d","author":null,"phase":"PreUpload","logo":"nope.png"}"#,
+        );
+        // 不创建 nope.png：缺失 => None，静默不报错不告警
+        let r = PluginResource::load(&tmp).unwrap();
+        assert!(r.logo_path.is_none(), "missing local logo file => None");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
