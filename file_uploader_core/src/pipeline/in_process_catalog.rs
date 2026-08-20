@@ -1,11 +1,11 @@
-use crate::pipeline::plugin::{PluginConfigInfo, PluginMeta, PluginResource};
-use file_uploader_plugins::InProcessEntry;
+use crate::pipeline::plugin::{PluginConfigInfo, PluginMeta, PluginResource, UploadPluginInfo};
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::interface::UploadPlugin;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use tracing::warn;
 
 /// 进程内插件的展示信息（不可 execute，纯展示）。
 #[derive(Serialize, Clone)]
@@ -17,21 +17,32 @@ pub struct PluginInfoSummary {
     pub logo_path: Option<String>,
 }
 
+/// 单个进程内插件的注册条目（由宿主提供）。
+pub struct InProcessEntry {
+    /// 资源目录相对 resources 根的子路径，如 `"input/default_input_handler"`。
+    /// 必须与 `resources/<phase>/<name>` 实际目录一致。
+    pub resource_subdir: &'static str,
+    /// 插件实例工厂（非捕获，可重复调用；由 catalog 内部 `OnceLock` 单例化）。
+    pub factory: fn() -> Arc<dyn UploadPlugin>,
+}
+
 pub struct InProcessPluginCatalog {
     summaries: Vec<PluginInfoSummary>,
     instances: HashMap<String, OnceLock<Arc<dyn UploadPlugin>>>,
     factories: HashMap<String, fn() -> Arc<dyn UploadPlugin>>,
+    resource_dirs: HashMap<String, PathBuf>,
 }
 
 impl InProcessPluginCatalog {
-    /// 由调用方提供清单与资源根目录构造（测试 / 定制场景入口）。
-    pub(crate) fn from_entries(
+    /// 由调用方提供清单与资源根目录构造（宿主注册入口，测试 / 定制场景亦可用）。
+    pub fn from_entries(
         entries: &[InProcessEntry],
         resources_root: &Path,
     ) -> Result<Self, UploadError> {
         let mut summaries = Vec::with_capacity(entries.len());
         let mut instances = HashMap::new();
         let mut factories = HashMap::new();
+        let mut resource_dirs = HashMap::new();
 
         for entry in entries {
             let dir = resources_root.join(entry.resource_subdir);
@@ -47,6 +58,7 @@ impl InProcessPluginCatalog {
                 logo_path: resource.logo_path.clone(),
             });
             factories.insert(id.clone(), entry.factory);
+            resource_dirs.insert(id.clone(), dir);
             instances.insert(id, OnceLock::new());
         }
 
@@ -54,20 +66,8 @@ impl InProcessPluginCatalog {
             summaries,
             instances,
             factories,
+            resource_dirs,
         })
-    }
-
-    /// 自定义资源根目录加载（用编译期清单 [`file_uploader_plugins::list_in_process_plugins`]）。
-    pub fn load_from(resources_root: &Path) -> Result<Self, UploadError> {
-        Self::from_entries(
-            file_uploader_plugins::list_in_process_plugins(),
-            resources_root,
-        )
-    }
-
-    /// 用编译期 env! 默认资源根目录加载。
-    pub fn load_default() -> Result<Self, UploadError> {
-        Self::load_from(Path::new(file_uploader_plugins::resources_root()))
     }
 
     /// 所有进程内插件概要（不触发插件加载、不调 on_load）。
@@ -82,30 +82,69 @@ impl InProcessPluginCatalog {
         let arc = cell.get_or_init(factory);
         Some(arc.clone())
     }
+
+    /// 按 id 构造 `UploadPluginInfo`（meta/config 来自资源目录缓存；插槽复用 per-id 单例）。
+    pub fn get_info(&self, id: &str) -> Option<Arc<UploadPluginInfo>> {
+        let cell = self.instances.get(id)?;
+        let factory = *self.factories.get(id)?;
+        let dir = self.resource_dirs.get(id)?;
+        let plugin = cell.get_or_init(factory).clone();
+        let slot = crate::pipeline::plugin::LazyPluginSlot {
+            source: crate::pipeline::plugin::LazySlotSource::InProcess {
+                resource_dir: dir.display().to_string(),
+                plugin,
+            },
+            inner: OnceLock::new(),
+        };
+        let summary = self.summaries.iter().find(|s| s.id == *id)?;
+        Some(Arc::new(UploadPluginInfo {
+            id: summary.id.clone(),
+            meta: summary.meta.clone(),
+            config: summary.config.clone(),
+            path: dir.display().to_string(),
+            readme_path: summary.readme_path.clone(),
+            logo_path: summary.logo_path.clone(),
+            slot,
+        }))
+    }
 }
 
-/// 全局 catalog 单例（首次成功 load_default 后固定；失败则下次重试）。
+/// 全局 catalog 单例（宿主注册后固定；未注册时查询返回空）。
 static GLOBAL_CATALOG: OnceLock<InProcessPluginCatalog> = OnceLock::new();
 
-fn ensure_catalog() -> Result<&'static InProcessPluginCatalog, UploadError> {
-    if let Some(c) = GLOBAL_CATALOG.get() {
-        return Ok(c);
+/// 宿主注册进程内插件清单（仅首次生效；重复调用 warn 并跳过，返回 Ok）。
+pub fn register_in_process_plugins(
+    entries: &[InProcessEntry],
+    resources_root: &Path,
+) -> Result<(), UploadError> {
+    if GLOBAL_CATALOG.get().is_some() {
+        warn!("in-process catalog already registered; skip re-registration");
+        return Ok(());
     }
-    let c = InProcessPluginCatalog::load_default()?; // 失败则不 set，下次调用重试
-    let _ = GLOBAL_CATALOG.set(c); // 竞态由 OnceLock 收敛
-    Ok(GLOBAL_CATALOG
-        .get()
-        .expect("GLOBAL_CATALOG must be set after successful load"))
+    let catalog = InProcessPluginCatalog::from_entries(entries, resources_root)?;
+    let _ = GLOBAL_CATALOG.set(catalog); // 竞态由 OnceLock 收敛
+    Ok(())
 }
 
-/// 列出所有内置进程内插件概要（首次调用触发 load_default）。
+/// 列出所有已注册进程内插件概要（未注册时返回空切片 + warn，不报错）。
 pub fn list_in_process_plugins() -> Result<&'static [PluginInfoSummary], UploadError> {
-    Ok(ensure_catalog()?.list())
+    match GLOBAL_CATALOG.get() {
+        Some(c) => Ok(c.list()),
+        None => {
+            warn!("in-process catalog not registered; return empty list");
+            Ok(&[])
+        }
+    }
 }
 
-/// 按 id 取进程内插件实现对象（首次调用触发 load_default）。
+/// 按 id 取进程内插件实现对象（未注册时返回 None）。
 pub fn get_in_process_plugin(id: &str) -> Result<Option<Arc<dyn UploadPlugin>>, UploadError> {
-    Ok(ensure_catalog()?.get(id))
+    Ok(GLOBAL_CATALOG.get().and_then(|c| c.get(id)))
+}
+
+/// 按 id 构造进程内插件的 `UploadPluginInfo`（供宿主装配 RegistryTable）。
+pub fn get_in_process_plugin_info(id: &str) -> Result<Option<Arc<UploadPluginInfo>>, UploadError> {
+    Ok(GLOBAL_CATALOG.get().and_then(|c| c.get_info(id)))
 }
 
 #[cfg(test)]
@@ -114,8 +153,6 @@ mod tests {
     use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
     use file_uploader_sdk::models::enums::{OutputResultType, UploadPhase};
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::path::PathBuf;
-    use file_uploader_plugins::resources_root;
 
     // factory 必须是非捕获 fn 指针，故 on_load 计数用 static 共享状态
     static MOCK_LOAD_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -233,74 +270,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(&empty_root);
     }
 
-    // ==================== 集成测试（依赖真实 target/<profile>/resources） ====================
+    // ==================== 宿主注册模式（全局单例，合并为单测试避免并行抢占） ====================
 
-    fn target_resources_root() -> PathBuf {
-        PathBuf::from(resources_root())
+    fn make_entry(subdir: &'static str, name: &'static str) -> (InProcessEntry, std::path::PathBuf) {
+        let root = make_tmp_resource_root(subdir, name, "Input");
+        (
+            InProcessEntry {
+                resource_subdir: subdir,
+                factory: || -> Arc<dyn UploadPlugin> { Arc::new(CountingMock) },
+            },
+            root,
+        )
     }
 
     #[test]
-    fn load_default_lists_real_builtins() {
-        let root = target_resources_root();
-        if !root.join("input/default_input_handler").exists() {
-            eprintln!("skip: {} not ready yet", root.display());
-            return;
-        }
-        let cat = InProcessPluginCatalog::load_default().expect("load_default should succeed");
-        let ids: Vec<&str> = cat.list().iter().map(|s| s.id.as_str()).collect();
-        assert!(
-            ids.iter().any(|id| id.ends_with("default_input_handler")),
-            "should include default_input_handler, got: {ids:?}"
-        );
-        assert!(
-            ids.iter().any(|id| id.ends_with("upload_file_validator")),
-            "should include upload_file_validator, got: {ids:?}"
-        );
-        assert!(
-            ids.iter().any(|id| id.ends_with("common_uploader")),
-            "should include common_uploader, got: {ids:?}"
-        );
-        assert!(
-            ids.iter().any(|id| id.ends_with("common_output")),
-            "should include common_output, got: {ids:?}"
-        );
-    }
+    fn global_register_list_get_info_and_skip_semantics() {
+        // 1. 首个注册者可强断言；若已被其它会话注册（进程内不会，防御性）则退化为跳过断言
+        let (e1, root1) = make_entry("input/mock_a", "mock_a");
+        super::register_in_process_plugins(&[e1], &root1).expect("first register should succeed");
 
-    #[test]
-    fn load_default_get_returns_real_executable_plugin() {
-        let root = target_resources_root();
-        if !root.join("input/default_input_handler").exists() {
-            eprintln!("skip: {} not ready yet", root.display());
-            return;
-        }
-        let cat = InProcessPluginCatalog::load_default().expect("load_default");
-        let id = "in_process_Input_default_input_handler";
-        let plugin = cat.get(id).expect("default_input_handler should be present");
-        assert_eq!(plugin.name(), "default_input_handler");
-        // execute 不 panic（空 ctx：file=None → success("no file")）
-        let ctx = UploadInputCtx {
-            file: None,
-            config_info: Arc::new(None),
-            extra_info: None,
-            work_dir: None,
-        };
-        let out = plugin.execute(&ctx);
-        assert!(matches!(out.result, OutputResultType::Success));
-    }
-
-    #[test]
-    fn global_functions_work_against_real_resources() {
-        let root = target_resources_root();
-        if !root.join("input/default_input_handler").exists() {
-            eprintln!("skip: {} not ready yet", root.display());
-            return;
-        }
-        let listed = super::list_in_process_plugins().expect("global list should succeed");
+        let listed = super::list_in_process_plugins().expect("list after register");
         assert!(!listed.is_empty());
-        let got = super::get_in_process_plugin("in_process_Input_default_input_handler")
-            .expect("global get should succeed")
-            .expect("plugin should exist");
-        assert_eq!(got.name(), "default_input_handler");
+        if listed.iter().any(|s| s.id == "in_process_Input_mock_a") {
+            // 我是首个注册者：id 派生规则不变
+            assert_eq!(listed.len(), 1);
+            // get_in_process_plugin_info 构造 UploadPluginInfo（meta/config 来自资源目录）
+            let info = super::get_in_process_plugin_info("in_process_Input_mock_a")
+                .expect("get_info should succeed")
+                .expect("plugin should exist");
+            assert_eq!(info.id, "in_process_Input_mock_a");
+            assert_eq!(info.meta.name, "mock_a");
+            assert!(matches!(info.meta.phase, UploadPhase::Input));
+        }
+
+        // 2. 二次注册（不同条目）被跳过
+        let (e2, root2) = make_entry("input/mock_b", "mock_b");
+        super::register_in_process_plugins(&[e2], &root2).expect("repeat register returns Ok");
+        let listed = super::list_in_process_plugins().expect("list");
+        assert!(
+            !listed.iter().any(|s| s.id.ends_with("mock_b")),
+            "second registration must be skipped, got: {:?}",
+            listed.iter().map(|s| &s.id).collect::<Vec<_>>()
+        );
+
+        // 3. 未知 id 行为
+        assert!(super::get_in_process_plugin_info("no_such_id")
+            .expect("query itself should not error")
+            .is_none());
     }
 
     #[test]
