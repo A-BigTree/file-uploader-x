@@ -1,8 +1,0 @@
-{
-  "name": "upload_file_validator",
-  "title": "上传文件校验器",
-  "description": "按文件类型(MIME)、文件名、大小三维校验单个上传文件（不通过则中断 pipeline）",
-  "version": "0.0.1",
-  "author": "A-BigTree",
-  "phase": "PreUpload"
-}

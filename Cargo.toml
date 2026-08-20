@@ -1,5 +1,5 @@
 [workspace]
-members = ["file_uploader_sdk", "file_uploader_core", "uploader_example_plugin", "file_uploader_plugins"]
+members = ["file_uploader_sdk", "file_uploader_core", "uploader_example_plugin"]
 resolver = "3"
 
 [workspace.package]
@@ -9,7 +9,6 @@ authors = ['abigtree']
 [workspace.dependencies]
 file_uploader_sdk = { path = "file_uploader_sdk" }
 file_uploader_core = { path = "file_uploader_core" }
-file_uploader_plugins = { path = "file_uploader_plugins" }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
