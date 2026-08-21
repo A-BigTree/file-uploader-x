@@ -1,8 +1,0 @@
-{
-  "name": "common_uploader",
-  "title": "通用上传器",
-  "description": "将工作目录中的文件上传到 Cloudflare R2 对象存储，默认按 64MiB 阈值启用串行分片上传",
-  "version": "0.0.1",
-  "author": "A-BigTree",
-  "phase": "Upload"
-}

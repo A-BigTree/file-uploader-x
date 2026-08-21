@@ -8,8 +8,10 @@
 - **ABI 稳定** — 动态库插件基于 stabby，无需与宿主程序使用相同 Rust 编译器版本
 - **Pipeline 执行引擎** — 按阶段（`Input → PreUpload → Upload → PostUpload → Output`）和优先级排序执行插件链
 - **延迟加载** — 插件在首次 `execute` 时才初始化（`LazyPluginSlot`），支持 `preload_all` 预加载
-- **事件回调** — 通过 `PipelineCallback` 监听阶段/插件的开始与结束事件
+- **事件回调** — 通过 `with_event_callback(PipelineCallback)` 监听阶段/插件的开始与结束事件
+- **阶段编排回调** — `with_stage_executor` 按阶段注入编排策略（串行/乱序/挑选/短路），未注入时按默认串行执行
 - **插件配置** — 每个插件一个资源目录（`meta.json` + `config.json`），表单驱动 schema（`form` 控件类型：`text` / `select`）
+- **宿主注入式进程内目录** — 框架零内置插件，宿主经 `register_in_process_plugins` 注册清单（原内置插件已迁移至 [file-uploader-x-app](https://github.com/A-BigTree/file-uploader-x-app)）
 
 ## 项目结构
 
@@ -30,18 +32,15 @@ file-uploader-x/
 │       ├── pipeline/
 │   │       ├── callback.rs     # PipelineCallback / PipelineEvent / PipelineEventKind
 │   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginConfigInfo / PluginFormSpec
-│   │       └── registry.rs     # UploadPluginRegistryTable / execute_pipeline
+│   │       ├── registry.rs     # UploadPluginRegistryTable / execute_pipeline / 回调属性注入
+│   │       ├── stage.rs        # StageExecute / StageExecutionContext（阶段编排回调）
+│   │       └── in_process_catalog.rs # 宿主注入式进程内目录（register_in_process_plugins）
 │       ├── config.rs           # 日志格式与初始化
-│       └── main.rs            # 示例入口
-├── file_uploader_plugins/      # 内置进程内插件库
-│   ├── src/
-│   │   ├── pre_upload/         # PreUpload 阶段插件（file_type_filter）
-│   │   ├── upload.rs           # Upload 阶段（待实现）
-│   │   └── post_upload.rs      # PostUpload 阶段（待实现）
-│   └── resources/              # 进程内插件资源（meta.json + config.json）
-│       └── pre/<name>/
+│       └── main.rs            # 示例入口（宿主注入 + 回调 + dylib 演示）
 ├── uploader_example_plugin/    # 示例动态库插件（cdylib），含 meta.json / config.json / plugin.id
 └── Cargo.toml                  # Workspace 根配置
+
+> 内置进程内插件（输入/校验/上传/输出 4 个）已迁移至宿主应用 [file-uploader-x-app](https://github.com/A-BigTree/file-uploader-x-app) 维护。
 ```
 
 ## 快速开始
@@ -56,7 +55,7 @@ file-uploader-x/
 # 构建整个 workspace（包含动态库插件）
 cargo build
 
-# 运行示例（测试进程内插件 + 动态库插件加载）
+# 运行示例（宿主注入进程内插件 + 回调机制 + 动态库插件加载）
 cargo run -p file_uploader_core
 ```
 
@@ -103,6 +102,13 @@ UploadInputCtx → [插件处理] → UploadOutputCtx
 
 ### Pipeline 事件回调
 
+事件回调以属性注入 RegistryTable（`execute_pipeline` 不再接收 callback 参数）：
+
+```rust
+let registry = UploadPluginRegistryTable::new(id, plugins)
+    .with_event_callback(Arc::new(MyCallback));
+```
+
 实现 `PipelineCallback` trait 可监听执行过程中的事件：
 
 `PipelineEvent` 包含回调时间毫秒时间戳（`timestamp_ms`）、事件类型、阶段、插件 ID 与插件元信息（`plugin_meta`，阶段级事件为 `None`）。
@@ -114,9 +120,36 @@ UploadInputCtx → [插件处理] → UploadOutputCtx
 
 若插件返回 `Failed`，Pipeline 会立即中断并返回失败结果。
 
+### 阶段编排回调
+
+`with_stage_executor(phase, executor)` 可按阶段注入编排回调，接管该阶段全部插件的执行顺序与策略；
+未注入的阶段由 `DefaultStageExecutor` 按历史串行语义执行（顺序 + Failed 短路）：
+
+```rust
+use file_uploader_core::pipeline::stage::{StageExecutionContext, StageExecute};
+
+struct ReverseExecutor;
+
+impl StageExecute for ReverseExecutor {
+    fn execute(&self, ctx: &mut StageExecutionContext) -> Result<UploadOutputCtx, UploadError> {
+        let n = ctx.plugins().len();
+        let mut last = None;
+        for i in (0..n).rev() {
+            last = Some(ctx.run_plugin(i)?); // 内部完成配置注入/事件/输出转输入
+        }
+        Ok(last.expect("non-empty"))
+    }
+}
+
+let registry = UploadPluginRegistryTable::new(id, plugins)
+    .with_stage_executor(UploadPhase::Upload, Arc::new(ReverseExecutor));
+```
+
+回调返回 `Err` 或 `Failed` 输出 → pipeline 终止。
+
 ## 插件开发指南
 
-### 开发进程内插件
+### 开发进程内插件（宿主注册）
 
 ```rust
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
@@ -146,7 +179,20 @@ impl UploadPlugin for MyPlugin {
 }
 ```
 
-配套资源放在独立目录 `resources/<phase>/<plugin_name>/`，含 `meta.json`（元数据）与 `config.json`（表单驱动配置）。
+配套资源放在宿主的 `resources/<phase>/<plugin_name>/` 目录，含 `meta.json`（元数据）与 `config.json`（表单驱动配置）。
+插件实现后由宿主在启动期注册清单（这是进程内插件的唯一注册入口）：
+
+```rust
+use file_uploader_core::{register_in_process_plugins, InProcessEntry};
+use std::sync::Arc;
+use file_uploader_sdk::models::interface::UploadPlugin;
+
+let entries = [InProcessEntry {
+    resource_subdir: "input/my_plugin",           // resources/input/my_plugin/{meta.json,config.json}
+    factory: || -> Arc<dyn UploadPlugin> { Arc::new(MyPlugin) },
+}];
+register_in_process_plugins(&entries, resources_root)?;
+```
 
 `meta.json`：
 
@@ -240,11 +286,12 @@ let registry = UploadPluginRegistryTable::new(
     ],
 );
 
-// 3. 可选：预加载所有插件
+// 3. 可选：注入事件回调 / 阶段编排回调、预加载所有插件
+let registry = registry.with_event_callback(Arc::new(MyCallback));
 registry.preload_all()?;
 
 // 4. 执行 Pipeline
-let result = registry.execute_pipeline(input_ctx, None);
+let result = registry.execute_pipeline(input_ctx);
 ```
 
 ## 关键依赖

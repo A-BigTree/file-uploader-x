@@ -30,23 +30,16 @@ file-uploader-x/
 │       │   └── fs_util.rs      # work_dir 沙箱文件操作
 │       ├── logger.rs           # plugin_*! 日志宏（dylib 插件用）
 │       └── error.rs            # UploadError（基于 thiserror）
-├── file_uploader_core/         # 核心引擎 - Pipeline 执行、插件管理
+├── file_uploader_core/         # 核心引擎 - Pipeline 执行、插件管理（零内置插件，进程内目录为宿主注入模式）
 │   └── src/
 │       ├── pipeline/
 │   │       ├── callback.rs     # PipelineCallback / PipelineEvent / PipelineEventKind
 │   │       ├── plugin.rs       # PluginSlot / LazyPluginSlot / UploadPluginInfo / PluginMeta / PluginResource（schema 类型由 SDK 重导出）
-│   │       └── registry.rs     # PluginRegistryInfo / UploadPluginRegistryTable / execute_pipeline / 配置校验
+│   │       ├── registry.rs     # PluginRegistryInfo / UploadPluginRegistryTable / execute_pipeline / 配置校验
+│   │       ├── stage.rs        # StageExecute / StageExecutionContext / DefaultStageExecutor（阶段编排回调）
+│   │       └── in_process_catalog.rs # 宿主注入式进程内目录（register_in_process_plugins / 全局查询 API）
 │       ├── config.rs           # 日志配置（UploaderLoggingFormatter、init_logging）
-│       └── main.rs            # 示例入口（测试 in-process + dylib 插件加载）
-├── file_uploader_plugins/      # 内置进程内插件库
-│   ├── src/
-│   │   ├── input/              # Input 阶段（default_input_handler）
-│   │   ├── pre_upload/         # PreUpload 阶段（upload_file_validator）
-│   │   ├── upload.rs           # Upload 阶段（待实现）
-│   │   └── post_upload.rs      # PostUpload 阶段（待实现）
-│   └── resources/              # 进程内插件资源（meta.json + config.json + README.md）
-│       ├── input/<name>/
-│       └── pre/<name>/
+│       └── main.rs            # 示例入口（宿主注入进程内插件 + 事件/阶段编排回调 + dylib 插件加载）
 ├── uploader_example_plugin/    # 示例动态库插件（cdylib）
 │   ├── meta.json               # 插件元数据
 │   ├── config.json             # 插件配置（common + groups 两层 schema）
@@ -58,9 +51,12 @@ file-uploader-x/
 │   ├── superpowers/            # 历史设计与实现计划（specs / plans）
 │   └── future/                 # 前瞻性技术调研
 ├── .agents/skills/             # 开发操作手册（skill）
-│   └── designing-in-process-plugins/ # 新增进程内插件的步骤指引
+│   └── designing-in-process-plugins/ # 新增进程内插件的步骤指引（历史版本，插件已迁至宿主应用）
 └── Cargo.toml                  # Workspace 根配置
 ```
+
+> 原内置进程内插件库 `file_uploader_plugins`（4 个插件）已迁移至宿主应用
+> [file-uploader-x-app](https://github.com/A-BigTree/file-uploader-x-app) 的 `app-core` 维护；框架侧不再内置任何插件。
 
 ## 文档地图
 
@@ -77,7 +73,7 @@ file-uploader-x/
 # 构建整个 workspace
 cargo build
 
-# 运行核心模块（测试进程内插件 + 动态库插件加载）
+# 运行核心模块（宿主注入进程内插件 + 事件/阶段编排回调 + 动态库插件加载演示）
 cargo run -p file_uploader_core
 
 # 构建动态库插件
@@ -103,8 +99,20 @@ cargo test
 `PluginSlot` 统一封装两种来源（`execute` / `on_load` / `on_unload` / `validate_params`）；
 `LazyPluginSlot` 基于 `OnceLock` 延迟初始化，插件仅在首次调用时才真正加载。
 
-一个插件 = 资源目录（`meta.json` + `config.json` + `README.md`）+ Rust 实现 + 模块注册 + pipeline 注册。
+一个插件 = 资源目录（`meta.json` + `config.json` + `README.md`）+ Rust 实现 + 宿主注册清单登记 + pipeline 注册。
 `PluginResource::load` 为两类插件共用的资源加载器。
+
+#### 进程内插件（宿主注入模式）
+
+框架不再内置任何进程内插件。宿主在启动期通过 `register_in_process_plugins(entries, resources_root)`
+注册清单（`InProcessEntry { resource_subdir, factory }`，定义在 `pipeline/in_process_catalog.rs`），
+随后用全局查询 API 装配：
+
+- `list_in_process_plugins()`：概要列表（未注册返回空 + warn）
+- `get_in_process_plugin(id)`：per-id 单例插件对象
+- `get_in_process_plugin_info(id)`：构造 `UploadPluginInfo`（装配 RegistryTable 用）
+
+重复注册仅首次生效（warn 跳过）。参考示例：`file_uploader_core/src/main.rs`。
 
 > 详见规范文档 [1. 插件体系](docs/references/plugin-specification.md#1-插件体系)、
 > [2. 资源目录与 meta.json](docs/references/plugin-specification.md#2-资源目录与-metajson)
@@ -147,10 +155,17 @@ Schema 类型定义在 SDK 的 `models/config_schema.rs`（便于 dylib 插件�
   `get_plugins_by_phase` / `preload_all` / `validate_all` / `execute_pipeline`
 - **运行态配置**：**扁平一层 JSON**，保留字段 `group` 标识激活分组，其余为参数 KV。
   插件侧用 `config_util::get_group` / `get_str` / `get_bool` / `get_list` / `get_size` / `get_i64` / `get_f64` 读取
-- **`execute_pipeline`**：按阶段执行插件链，支持可选 `PipelineCallback`。
+- **`execute_pipeline`**：按阶段执行插件链。**回调属性化**：事件回调与阶段编排回调
+  均以 builder 注入 RegistryTable（`execute_pipeline` 本身不再收 callback 参数）。
   输出经 `output_to_input` 转为下一插件输入（`extra_info` 累积）。插件返回 `Failed` 立即中断
-- **事件回调**：`PipelineEventKind` = `PhaseStart` / `PhaseEnd` / `PluginStart` / `PluginEnd`；
+- **事件回调**：`with_event_callback(Arc<dyn PipelineCallback>)`；
+  `PipelineEventKind` = `PhaseStart` / `PhaseEnd` / `PluginStart` / `PluginEnd`；
   `PipelineEvent` 含毫秒时间戳、阶段、插件 ID 与元信息（阶段级事件后两者为 `None`）
+- **阶段编排回调**：`with_stage_executor(phase, Arc<dyn StageExecute>)` 按阶段注入，
+  接管该阶段插件执行顺序；未注入阶段由 `DefaultStageExecutor` 按历史串行语义执行
+  （顺序 + Failed 短路）。编排回调经 `StageExecutionContext` 编排：`plugins()` 取已排序列表、
+  `run_plugin(idx)` 执行单插件（内部完成配置注入 / PluginStart/End 事件 / 输出转输入）、
+  `emit_event(...)` 发自定义事件。回调返回 `Err` 或 Failed 输出 → pipeline 终止
 
 > 详见规范文档 [6. Pipeline 注册与执行](docs/references/plugin-specification.md#6-pipeline-注册与执行)
 
@@ -183,16 +198,17 @@ UploadInputCtx → 插件处理 → UploadOutputCtx
 
 每个插件一个资源目录：
 
-- **进程内插件**：`file_uploader_plugins/resources/<phase>/<plugin_name>/`，
+- **进程内插件**：由宿主维护，`<宿主>/resources/<phase>/<plugin_name>/`，
   含 `meta.json`（必需）+ `config.json`（可选）+ `README.md`（可选）。
-  `<phase>` 段约定 `input`/`pre`/`upload`/`post`
+  `<phase>` 段约定 `input`/`pre`/`upload`/`post`（宿主注册清单的 `resource_subdir` 与之一致）
 - **动态库插件**：`.dylib` 产物同目录，另需 `plugin.id`
 
 `README.md` **可选**且**不加载内容到内存**，只记录 `readme_path`；
 定位是**面向配置者的使用说明书**，不是开发文档。
 
-构建期：进程内 `build.rs` 递归复制 `resources/` 整树到 `target/<profile>/resources/`；
-dylib `build.rs` 复制 `meta.json` + `config.json` + `plugin.id`（必需）与 `README.md`（可选）到产物同目录。
+构建期：进程内插件的资源复制由**宿主**的 `build.rs` 负责（递归复制 `resources/` 整树到
+`target/<profile>/resources/` 并注入资源根 env）；dylib `build.rs` 复制 `meta.json` + `config.json`
++ `plugin.id`（必需）与 `README.md`（可选）到产物同目录。
 
 > 完整字段表、单形态与多形态 `config.json` 示例、README 章节模板与写作要求，
 > 见规范文档 [2](docs/references/plugin-specification.md#2-资源目录与-metajson)、
@@ -223,7 +239,7 @@ dylib `build.rs` 复制 `meta.json` + `config.json` + `plugin.id`（必需）与
 
 ## 注意事项
 
-- `file_uploader_plugins/src/upload.rs` 和 `post_upload.rs` 目前为空，对应阶段的内置插件待实现
+- 内置进程内插件已迁移至宿主应用 file-uploader-x-app（`file_uploader_plugins` crate 已删除）；本框架零内置插件
 - 动态库插件需要导出 `get_dylib_plugin` 函数（类型为 `FnGetDylibPlugin`），`Cargo.toml` 需指定 `crate-type = ["cdylib"]`
 - 所有枚举类型均标注了 `#[stabby::stabby]` 和 `#[repr(u8)]`，确保 ABI 兼容
 - `PluginSlot` 的 `Drop` 实现会自动调用 `on_unload`，手动 drop 时注意副作用

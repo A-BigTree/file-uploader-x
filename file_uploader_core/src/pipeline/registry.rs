@@ -1,5 +1,6 @@
 use crate::pipeline::callback::{PipelineCallback, PipelineEvent, PipelineEventKind};
 use crate::pipeline::plugin::{UploadPluginInfo, ValidationError, errors_to_string};
+use crate::pipeline::stage::{DefaultStageExecutor, StageExecutionContext, StageExecute};
 use file_uploader_sdk::error::UploadError;
 use file_uploader_sdk::models::ctx::{UploadInputCtx, UploadOutputCtx};
 use file_uploader_sdk::models::enums::UploadPhase;
@@ -12,6 +13,17 @@ pub enum PluginRegistryStatus {
     Disable = 0,
     // 启用
     Enable = 1,
+}
+
+/// 阶段序（Input=0..Output=4），供排序与回调槽位索引复用。
+pub(crate) fn phase_order(phase: &UploadPhase) -> u8 {
+    match phase {
+        UploadPhase::Input => 0,
+        UploadPhase::PreUpload => 1,
+        UploadPhase::Upload => 2,
+        UploadPhase::PostUpload => 3,
+        UploadPhase::Output => 4,
+    }
 }
 
 // 插件注册信息
@@ -132,6 +144,10 @@ pub struct UploadPluginRegistryTable {
     plugins: Vec<PluginRegistryInfo>,
     /// 构建期声明式校验结果缓存：(plugin_id, 错误)
     declarative_errors: Vec<(String, ValidationError)>,
+    /// 按阶段注入的编排回调（None 槽位 = 默认串行执行）
+    stage_executors: [Option<Arc<dyn StageExecute>>; 5],
+    /// 事件回调（原 execute_pipeline 参数移入）
+    event_callback: Option<Arc<dyn PipelineCallback>>,
 }
 
 impl UploadPluginRegistryTable {
@@ -150,6 +166,8 @@ impl UploadPluginRegistryTable {
             id,
             plugins,
             declarative_errors,
+            stage_executors: std::array::from_fn(|_| None),
+            event_callback: None,
         }
     }
 
@@ -225,6 +243,22 @@ impl UploadPluginRegistryTable {
         &self.plugins
     }
 
+    /// 注入阶段编排回调：该阶段插件执行由回调接管（覆盖旧值）。
+    pub fn with_stage_executor(
+        mut self,
+        phase: UploadPhase,
+        executor: Arc<dyn StageExecute>,
+    ) -> Self {
+        self.stage_executors[phase_order(&phase) as usize] = Some(executor);
+        self
+    }
+
+    /// 注入事件回调（原 execute_pipeline 的 callback 参数移入）。
+    pub fn with_event_callback(mut self, callback: Arc<dyn PipelineCallback>) -> Self {
+        self.event_callback = Some(callback);
+        self
+    }
+
     pub fn get_plugins_by_phase(&self, phase: UploadPhase) -> Vec<&PluginRegistryInfo> {
         self.plugins
             .iter()
@@ -278,7 +312,7 @@ impl UploadPluginRegistryTable {
         }
     }
 
-    fn output_to_input(
+    pub(crate) fn output_to_input(
         output: &UploadOutputCtx,
         source_ctx: &UploadInputCtx,
     ) -> UploadInputCtx {
@@ -301,11 +335,7 @@ impl UploadPluginRegistryTable {
         }
     }
 
-    pub fn execute_pipeline(
-        &self,
-        input_ctx: UploadInputCtx,
-        callback: Option<&dyn PipelineCallback>,
-    ) -> UploadOutputCtx {
+    pub fn execute_pipeline(&self, input_ctx: UploadInputCtx) -> UploadOutputCtx {
         let phases = [
             UploadPhase::Input,
             UploadPhase::PreUpload,
@@ -323,98 +353,63 @@ impl UploadPluginRegistryTable {
                 continue;
             }
 
-            if let Some(cb) = &callback {
-                let now_ms = chrono::Local::now().timestamp_millis();
-                let event = PipelineEvent {
-                    timestamp_ms: now_ms,
-                    kind: PipelineEventKind::PhaseStart,
-                    phase: phase.clone(),
-                    plugin_id: None,
-                    plugin_meta: None,
-                };
-                cb.on_event(&event, &current_ctx, None);
-            }
+            let callback = self.event_callback.as_deref();
+            emit_phase_event(
+                callback,
+                PipelineEventKind::PhaseStart,
+                phase,
+                &current_ctx,
+                None,
+            );
 
-            let mut phase_last_output: Option<UploadOutputCtx> = None;
+            let executor = self.stage_executors[phase_order(phase) as usize]
+                .as_ref()
+                .map(|e| e.as_ref());
+            let effective: &dyn StageExecute = executor.unwrap_or(&DefaultStageExecutor);
 
-            for plugin in &phase_plugins {
-                let plugin_input = UploadInputCtx {
-                    file: current_ctx.file.clone(),
-                    config_info: Arc::new(plugin.registry_config.clone()),
-                    extra_info: current_ctx.extra_info.clone(),
-                    work_dir: current_ctx.work_dir.clone(),
-                };
+            let mut stage_ctx = StageExecutionContext::new(
+                phase.clone(),
+                phase_plugins,
+                callback,
+                std::mem::replace(
+                    &mut current_ctx,
+                    UploadInputCtx {
+                        file: None,
+                        config_info: Arc::new(None),
+                        extra_info: None,
+                        work_dir: None,
+                    },
+                ),
+            );
 
-                if let Some(cb) = &callback {
-                    let now_ms = chrono::Local::now().timestamp_millis();
-                    let event = PipelineEvent {
-                        timestamp_ms: now_ms,
-                        kind: PipelineEventKind::PluginStart,
-                        phase: phase.clone(),
-                        plugin_id: Some(&plugin.plugin_instance.id),
-                        plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
-                    };
-                    cb.on_event(&event, &plugin_input, None);
-                }
-
-                let output = match plugin.execute(&plugin_input) {
-                    Ok(ctx) => ctx,
-                    Err(e) => {
-                        let fail_ctx = UploadOutputCtx {
-                            result: file_uploader_sdk::models::enums::OutputResultType::Failed,
-                            message: e.to_string(),
-                            file: None,
-                            extra_info: None,
-                        };
-                        if let Some(cb) = &callback {
-                            let now_ms = chrono::Local::now().timestamp_millis();
-                            let event = PipelineEvent {
-                                timestamp_ms: now_ms,
-                                kind: PipelineEventKind::PluginEnd,
-                                phase: phase.clone(),
-                                plugin_id: Some(&plugin.plugin_instance.id),
-                                plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
-                            };
-                            cb.on_event(&event, &plugin_input, Some(&fail_ctx));
-                        }
-                        return fail_ctx;
+            let phase_last_output = match effective.execute(&mut stage_ctx) {
+                Ok(output) => {
+                    if matches!(
+                        output.result,
+                        file_uploader_sdk::models::enums::OutputResultType::Failed
+                    ) {
+                        return output;
                     }
-                };
-
-                if let Some(cb) = &callback {
-                    let now_ms = chrono::Local::now().timestamp_millis();
-                    let event = PipelineEvent {
-                        timestamp_ms: now_ms,
-                        kind: PipelineEventKind::PluginEnd,
-                        phase: phase.clone(),
-                        plugin_id: Some(&plugin.plugin_instance.id),
-                        plugin_meta: Some(plugin.plugin_instance.meta.as_ref()),
+                    Some(output)
+                }
+                Err(e) => {
+                    return UploadOutputCtx {
+                        result: file_uploader_sdk::models::enums::OutputResultType::Failed,
+                        message: e.to_string(),
+                        file: None,
+                        extra_info: None,
                     };
-                    cb.on_event(&event, &plugin_input, Some(&output));
                 }
+            };
+            current_ctx = stage_ctx.into_inner();
 
-                if matches!(
-                    output.result,
-                    file_uploader_sdk::models::enums::OutputResultType::Failed
-                ) {
-                    return output;
-                }
-
-                phase_last_output = Some(output.clone());
-                current_ctx = Self::output_to_input(&output, &current_ctx);
-            }
-
-            if let Some(cb) = &callback {
-                let now_ms = chrono::Local::now().timestamp_millis();
-                let event = PipelineEvent {
-                    timestamp_ms: now_ms,
-                    kind: PipelineEventKind::PhaseEnd,
-                    phase: phase.clone(),
-                    plugin_id: None,
-                    plugin_meta: None,
-                };
-                cb.on_event(&event, &current_ctx, phase_last_output.as_ref());
-            }
+            emit_phase_event(
+                callback,
+                PipelineEventKind::PhaseEnd,
+                phase,
+                &current_ctx,
+                phase_last_output.as_ref(),
+            );
 
             last_output = phase_last_output;
         }
@@ -428,6 +423,25 @@ impl UploadPluginRegistryTable {
                 extra_info: current_ctx.extra_info,
             },
         }
+    }
+}
+
+fn emit_phase_event(
+    callback: Option<&dyn PipelineCallback>,
+    kind: PipelineEventKind,
+    phase: &UploadPhase,
+    ctx: &UploadInputCtx,
+    result: Option<&UploadOutputCtx>,
+) {
+    if let Some(cb) = callback {
+        let event = PipelineEvent {
+            timestamp_ms: chrono::Local::now().timestamp_millis(),
+            kind,
+            phase: phase.clone(),
+            plugin_id: None,
+            plugin_meta: None,
+        };
+        cb.on_event(&event, ctx, result);
     }
 }
 
@@ -933,7 +947,7 @@ mod tests {
             extra_info: None,
             work_dir: None,
         };
-        let result = registry.execute_pipeline(input, None);
+        let result = registry.execute_pipeline(input);
         assert!(matches!(
             result.result,
             file_uploader_sdk::models::enums::OutputResultType::Success
@@ -944,7 +958,9 @@ mod tests {
     fn test_execute_pipeline_single_plugin_callback_order() {
         let plugin_info = create_mock_plugin_info("p1", UploadPhase::PreUpload);
         let reg_info = PluginRegistryInfo::new(plugin_info, 1, PluginRegistryStatus::Enable, None);
-        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![reg_info]);
+        let cb = Arc::new(TestCallback::new());
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![reg_info])
+            .with_event_callback(cb.clone());
 
         let input = UploadInputCtx {
             file: None,
@@ -953,8 +969,7 @@ mod tests {
             work_dir: None,
         };
 
-        let cb = TestCallback::new();
-        let result = registry.execute_pipeline(input, Some(&cb));
+        let result = registry.execute_pipeline(input);
         assert!(matches!(
             result.result,
             file_uploader_sdk::models::enums::OutputResultType::Success
@@ -1003,8 +1018,9 @@ mod tests {
             PluginRegistryStatus::Enable,
             None,
         );
-        let registry =
-            UploadPluginRegistryTable::new("test".to_string(), vec![p1, p2, p3]);
+        let cb = Arc::new(TestCallback::new());
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![p1, p2, p3])
+            .with_event_callback(cb.clone());
 
         let input = UploadInputCtx {
             file: None,
@@ -1013,8 +1029,7 @@ mod tests {
             work_dir: None,
         };
 
-        let cb = TestCallback::new();
-        let result = registry.execute_pipeline(input, Some(&cb));
+        let result = registry.execute_pipeline(input);
 
         assert!(matches!(
             result.result,
@@ -1091,7 +1106,7 @@ mod tests {
             work_dir: None,
         };
 
-        registry.execute_pipeline(input, None);
+        registry.execute_pipeline(input);
 
         let config = captured.lock().unwrap();
         assert_eq!(**config, Some(config_value));
@@ -1157,8 +1172,97 @@ mod tests {
             extra_info: None,
             work_dir: Some("/data/wd-flow".to_string()),
         };
-        table.execute_pipeline(input, None);
+        table.execute_pipeline(input);
         assert_eq!(seen.lock().unwrap().as_deref(), Some("/data/wd-flow"));
+    }
+
+    // ==================== 阶段编排回调 ====================
+
+    struct RecordingExecutor {
+        order: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl crate::pipeline::stage::StageExecute for RecordingExecutor {
+        fn execute(
+            &self,
+            ctx: &mut crate::pipeline::stage::StageExecutionContext,
+        ) -> Result<UploadOutputCtx, UploadError> {
+            // 逆序执行本阶段插件
+            let n = ctx.plugins().len();
+            let mut last = None;
+            for i in (0..n).rev() {
+                self.order.lock().unwrap().push(format!("run:{}", i));
+                last = Some(ctx.run_plugin(i)?);
+            }
+            Ok(last.expect("at least one plugin"))
+        }
+    }
+
+    #[test]
+    fn test_custom_stage_executor_takes_over_ordering() {
+        let p1 = PluginRegistryInfo::new(
+            create_mock_plugin_info("p1", UploadPhase::Upload),
+            1,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+        let p2 = PluginRegistryInfo::new(
+            create_mock_plugin_info("p2", UploadPhase::Upload),
+            2,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+        let recorder = Arc::new(RecordingExecutor {
+            order: std::sync::Mutex::new(Vec::new()),
+        });
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![p1, p2])
+            .with_stage_executor(UploadPhase::Upload, recorder.clone());
+        let input = UploadInputCtx {
+            file: None,
+            config_info: Arc::new(None),
+            extra_info: None,
+            work_dir: None,
+        };
+        let result = registry.execute_pipeline(input);
+        assert!(matches!(
+            result.result,
+            file_uploader_sdk::models::enums::OutputResultType::Success
+        ));
+        // 逆序执行：先 idx=1（p2）后 idx=0（p1）
+        assert_eq!(*recorder.order.lock().unwrap(), vec!["run:1", "run:0"]);
+    }
+
+    #[test]
+    fn test_executor_error_fails_pipeline() {
+        struct FailExecutor;
+        impl crate::pipeline::stage::StageExecute for FailExecutor {
+            fn execute(
+                &self,
+                _ctx: &mut crate::pipeline::stage::StageExecutionContext,
+            ) -> Result<UploadOutputCtx, UploadError> {
+                Err(UploadError::PluginParamInvalid("executor boom".into()))
+            }
+        }
+        let p1 = PluginRegistryInfo::new(
+            create_mock_plugin_info("p1", UploadPhase::Upload),
+            1,
+            PluginRegistryStatus::Enable,
+            None,
+        );
+        let registry = UploadPluginRegistryTable::new("test".to_string(), vec![p1])
+            .with_stage_executor(UploadPhase::Upload, Arc::new(FailExecutor));
+        let input = UploadInputCtx {
+            file: None,
+            config_info: Arc::new(None),
+            extra_info: None,
+            work_dir: None,
+        };
+        let result = registry.execute_pipeline(input);
+        assert!(matches!(
+            result.result,
+            file_uploader_sdk::models::enums::OutputResultType::Failed
+        ));
+        assert_eq!(result.message, "Plugin param invalid: executor boom");
     }
 
     // ==================== 配置校验 ====================
