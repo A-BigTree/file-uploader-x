@@ -72,7 +72,7 @@ impl UploadFileData {
 /**
  * 输入上下文
  */
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UploadInputCtx {
     // 文件数据
     pub file: Option<Arc<UploadFileData>>,
