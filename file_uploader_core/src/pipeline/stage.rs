@@ -54,6 +54,11 @@ impl<'a> StageExecutionContext<'a> {
         &self.current_ctx
     }
 
+    /// 替换阶段当前输入 ctx（自定义编排器用于输入重置/恢复）。
+    pub fn reset_input(&mut self, ctx: UploadInputCtx) {
+        self.current_ctx = ctx;
+    }
+
     /// 执行本阶段第 `idx` 个插件：注入 registry_config、发 PluginStart/PluginEnd 事件、
     /// 执行插件、完成 output→input 转换并推进 `current_ctx`。
     ///
@@ -152,5 +157,53 @@ impl StageExecute for DefaultStageExecutor {
             last = Some(output);
         }
         last.ok_or_else(|| UploadError::PluginParamInvalid("stage has no plugins to execute".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use file_uploader_sdk::models::ctx::{UploadFileData, UploadInputCtx};
+    use file_uploader_sdk::models::enums::FileDataType;
+    use std::sync::Arc;
+
+    fn ctx_with_marker(marker: &str) -> UploadInputCtx {
+        UploadInputCtx {
+            file: Some(Arc::new(UploadFileData::new(
+                FileDataType::FilePath,
+                "/tmp/x".into(),
+                "id".into(),
+                "x".into(),
+                String::new(),
+                1,
+            ))),
+            config_info: Arc::new(None),
+            extra_info: Some(
+                [("/marker".to_string(), marker.to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+            work_dir: None,
+        }
+    }
+
+    #[test]
+    fn reset_input_replaces_current_ctx() {
+        let initial = ctx_with_marker("base");
+        let mut sc = StageExecutionContext::new(
+            UploadPhase::Upload,
+            vec![],
+            None,
+            ctx_with_marker("other"),
+        );
+        assert_eq!(
+            sc.current_input().extra_info.as_ref().unwrap().get("/marker"),
+            Some(&"other".to_string())
+        );
+        sc.reset_input(initial);
+        assert_eq!(
+            sc.current_input().extra_info.as_ref().unwrap().get("/marker"),
+            Some(&"base".to_string())
+        );
     }
 }
