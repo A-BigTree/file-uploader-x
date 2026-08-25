@@ -47,6 +47,26 @@ impl UploadFileData {
             data: None,
         }
     }
+
+    /// 内存字节构造：data_type=Binary，`data` 为权威数据，
+    /// `input_path` 仅保留来源路径作标识（不保证可读），size 取字节长度。
+    pub fn binary(
+        input_path: String,
+        id: String,
+        name: String,
+        file_type: String,
+        data: Vec<u8>,
+    ) -> Self {
+        Self {
+            data_type: crate::models::enums::FileDataType::Binary,
+            input_path,
+            id,
+            name,
+            file_type,
+            size: data.len(),
+            data: Some(stabby::sync::Arc::new(stabby::vec::Vec::from(data.as_slice()))),
+        }
+    }
 }
 
 /**
